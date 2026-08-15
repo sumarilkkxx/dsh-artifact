@@ -1,7 +1,7 @@
 {
   "name": "dsh-artifact",
-  "version": "0.1.0",
-  "description": "Render ECharts (and later more engines) inline in DeepSeek Harness conversations — declarative options fed to the real charting engine.",
+  "version": "0.2.0",
+  "description": "Render ECharts, Mermaid, Three.js, and sandboxed custom HTML inline in DeepSeek Harness conversations — declarative payloads fed to the real engines.",
   "license": "MIT",
   "type": "module",
   "main": "./index.js",
@@ -15,7 +15,8 @@
     "client.js",
     "assets",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md"
   ],
   "dsh": {
     "bundle": {
@@ -30,7 +31,9 @@
     "build": "node scripts/build.mjs"
   },
   "devDependencies": {
-    "echarts": "^5.5.1"
+    "echarts": "^5.5.1",
+    "mermaid": "^11.16.1",
+    "three": "^0.149.0"
   },
   "engines": {
     "node": ">=22.19"

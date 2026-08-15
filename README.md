@@ -2,22 +2,23 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-> Render interactive **ECharts** charts inline in DeepSeek Harness conversations.
+> Render interactive **ECharts / Mermaid / Three.js** and sandboxed custom HTML inline in DeepSeek Harness conversations.
 
-`dsh-artifact` lets the model render real, interactive charts — not hand-drawn SVG, not a wall of text — directly inside the conversation. The model calls the `render_artifact` tool with a **declarative ECharts `option`** (plain JSON, no functions), and the Web UI renders it with the actual ECharts engine: tooltip, zoom, legend, and every chart type ECharts supports (bar, line, pie, scatter, heatmap, radar, gauge, funnel, sankey, graph, map, boxplot, sunburst, candlestick, and more).
+`dsh-artifact` lets the model render real, interactive content — not hand-drawn SVG, not a wall of text — directly inside the conversation. The model calls `render_artifact` with a **declarative payload** — a plain-JSON ECharts `option`, a Mermaid diagram, or a Three.js 3D scene — and the Web UI renders it with the real engine (tooltip, zoom, legend, diagrams, 3D previews). A second tool, `render_html`, renders arbitrary custom HTML/CSS/JS in a **sandboxed iframe**.
 
 ## Why dsh-artifact
 
 | | dsh-genui | dsh-visualize | **dsh-artifact** |
 |---|---|---|---|
-| Model output | whitelisted JSON tree | arbitrary HTML/JS | **declarative ECharts option** |
-| Real chart engine | ✗ (3 hand-drawn kinds) | ✓ (via HTML) | **✓ (full ECharts)** |
+| Model output | whitelisted JSON tree | arbitrary HTML/JS | **declarative payload (ECharts / Mermaid / Three)** |
+| Real engine | ✗ (3 hand-drawn chart kinds) | ✓ (via HTML) | **✓ (ECharts + Mermaid + Three.js)** |
 | Inline in conversation | ✓ | ✗ (tool row only) | ✓ (tool card) |
-| Interactive | ✓ | partial | ✓ (tooltip / zoom / legend) |
+| Interactive | ✓ | partial | ✓ (tooltip / zoom / legend / 3D) |
+| Arbitrary HTML sandbox | ✗ | ✓ | **✓ (`render_html`)** |
 | Action round-trip | ✓ | ✗ | roadmap (v0.3) |
-| Security model | whitelist | sandboxed iframe | **pure JSON, no functions** |
+| Security model | whitelist | sandboxed iframe | **pure JSON + sandboxed iframe** |
 
-`dsh-genui` hand-draws three chart kinds; `dsh-visualize` renders arbitrary HTML but has no round-trip. `dsh-artifact` feeds the **real ECharts engine** with a **declarative JSON option** the model is already excellent at writing — full chart capability at a lower authoring cost, behind a strict JSON-only security boundary.
+`dsh-genui` hand-draws three chart kinds; `dsh-visualize` renders arbitrary HTML but has no round-trip. `dsh-artifact` feeds the **real engines** (ECharts, Mermaid, Three.js) with **declarative JSON payloads** the model is already excellent at writing, and adds a **sandboxed HTML** channel for custom widgets — full capability at a lower authoring cost, behind strict JSON-only and iframe-sandbox security boundaries.
 
 ## Install
 
@@ -44,16 +45,26 @@ Ask the model for a chart:
 
 The model calls `render_artifact` with an ECharts option, and the chart appears as an interactive card in the conversation.
 
-### Tool reference
+### `render_artifact` (charts / diagrams / 3D)
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `option` | object / string | yes | ECharts option (plain JSON, **no functions**; use string templates like `{c}%` for formatters) |
-| `engine` | string | no | Rendering engine; only `echarts` in this version |
-| `title` | string | no | Card title |
-| `height` | number | no | Chart height in px (default 360, min 120) |
+| Parameter | Type | Description |
+|---|---|---|
+| `engine` | string | `echarts` (default) · `mermaid` · `three` |
+| `option` | object / string | ECharts option — engine=echarts (plain JSON, **no functions**; string templates like `{c}%`) |
+| `code` | string | Mermaid diagram source — engine=mermaid (flowchart / sequenceDiagram / classDiagram / gantt / stateDiagram / pie / erDiagram / journey) |
+| `spec` | object / string | Three.js scene — engine=three (`{"meshes":[{shape,color,size,position,rotation}],"background","ambient"}`) |
+| `title` | string | Card title |
+| `height` | number | Height in px (default 360, min 120) |
 
-Example option the model produces:
+### `render_html` (sandboxed custom widget)
+
+| Parameter | Type | Description |
+|---|---|---|
+| `html` | string | Self-contained HTML fragment or full document (inline scripts/styles allowed; external resources blocked) |
+| `title` | string | Card title |
+| `height` | number | Height in px (default 400, min 120) |
+
+Example the model produces:
 
 ```json
 {
@@ -71,24 +82,24 @@ Example option the model produces:
 
 ### Security model
 
-- The `option` must be **pure JSON** — functions, `undefined`, and symbols are rejected by the host half (the model is instructed to use ECharts string templates for formatters).
-- The engine asset is served only from the plugin's own route; path traversal is blocked.
-- No arbitrary HTML/script path exists in v0.1.
+- Declarative payloads (`option` / `spec`) must be **pure JSON** — functions, `undefined`, and symbols are rejected by the host half.
+- Engine assets are served only from the plugin's own route; path traversal is blocked.
+- `render_html` widgets run in a **sandboxed iframe** (opaque origin) with a CSP that blocks network, top navigation, and form submission; only inline scripts/styles are allowed.
 
 ## How it works
 
 ```
 dsh-artifact/
-├── index.js               # host half: render_artifact tool + system prompt + asset route
-├── client.js              # browser half: keyed toolview slot + lazy ECharts render
+├── index.js               # host half: render_artifact + render_html tools + asset route
+├── client.js              # browser half: keyed toolviews + engine dispatch + sandboxed iframe
 ├── cordis.patch.yml       # bundle layer (insert dsh-artifact)
 ├── package.json           # dsh.bundle + dsh.client manifests
-├── assets/echarts.min.js  # ECharts UMD (built, shipped for git-install)
-└── scripts/build.mjs      # copies echarts dist -> assets/
+├── assets/                # engine UMDs (echarts/mermaid/three; built, shipped for git-install)
+└── scripts/build.mjs      # copies engine dists -> assets/
 ```
 
-1. **Host half** (`index.js`) registers the `render_artifact` tool as a raw JSON-Schema definition, injects system-prompt guidance, and serves the ECharts asset from `/plugins/dsh-artifact/assets/*`.
-2. **Browser half** (`client.js`) registers the keyed `tool.call.toolview` slot for `render_artifact`. When a result settles, the host projects the resolved option into the result `meta` (via `presentationMeta`); the toolview reads it and renders with the real ECharts engine, lazy-loaded on first use.
+1. **Host half** (`index.js`) registers `render_artifact` and `render_html` as raw JSON-Schema definitions, injects system-prompt guidance, and serves the engine assets from `/plugins/dsh-artifact/assets/*`.
+2. **Browser half** (`client.js`) registers keyed `tool.call.toolview` slots for both tools. When a result settles, the host projects the resolved payload into the result `meta` (via `presentationMeta`); the toolview dispatches on `meta.engine` and lazy-loads the matching engine. `render_html` renders into a sandboxed `iframe` with a CSP.
 3. **Zero `@deepseek-ai/*` runtime dependencies** — both halves are hand-written plain JS. The host uses only Node builtins; the browser half takes `react` from the loader's module table. This deliberately avoids the developer-preview version-drift trap (the stale `latest` tag on `@deepseek-ai/dsh-tools`, and cross-package rc-line mismatches).
 
 ## Development
@@ -103,21 +114,21 @@ dsh-artifact/
 
 | Path | Purpose |
 |---|---|
-| `index.js` | Host half — `render_artifact` tool definition, system-prompt section, lazy-asset route |
-| `client.js` | Browser half — keyed toolview component, ECharts lazy loader (module-loader protocol) |
+| `index.js` | Host half — `render_artifact` + `render_html` tool definitions, system-prompt section, lazy-asset route |
+| `client.js` | Browser half — keyed toolviews, engine dispatch (echarts/mermaid/three), sandboxed iframe |
 | `cordis.patch.yml` | Bundle layer; `name` is a **package name** resolved through node_modules, not a path |
 | `package.json` | `dsh.bundle` + `dsh.client` manifests, `exports["./client"]`, build scripts |
-| `assets/echarts.min.js` | ECharts UMD build (committed so `dsh plugin add github:...` needs no build) |
-| `scripts/build.mjs` | Copies `node_modules/echarts/dist/echarts.min.js` → `assets/` |
+| `assets/*.min.js` | Engine UMD builds (echarts/mermaid/three; committed so `dsh plugin add github:...` needs no build) |
+| `scripts/build.mjs` | Copies engine dists → `assets/` |
 
 ### Build
 
 ```sh
-npm install     # installs echarts (build-time only; NOT a runtime dependency)
-npm run build   # copies the echarts UMD bundle into assets/
+npm install     # installs echarts/mermaid/three (build-time only; NOT runtime deps)
+npm run build   # copies the engine UMD bundles into assets/
 ```
 
-`echarts` is a **devDependency** used only to produce `assets/echarts.min.js`. The plugin itself has zero runtime dependencies, so a `link:` install needs nothing extra. Bump the engine by editing the `echarts` devDependency version and re-running `npm run build`.
+The engines are **devDependencies** used only to produce `assets/*.min.js`. The plugin itself has zero runtime dependencies, so a `link:` install needs nothing extra. Bump an engine by editing its devDependency version and re-running `npm run build`.
 
 ### Local debug loop
 
@@ -159,12 +170,12 @@ node scripts/smoke-test.mjs
 - Pure-JSON security boundary (function/`undefined`/symbol rejection + path-traversal guard)
 - Verified end-to-end: real model call → tool → result meta → browser canvas
 
-### v0.2 — multi-engine + HTML sandbox (planned)
+### v0.2 — multi-engine + HTML sandbox ✅ shipped
 
-- Additional engines: **mermaid** (flow/sequence/class/gantt), **three.js** (3D scenes)
+- Additional engines: **mermaid** (flow/sequence/class/gantt/state/pie/er/journey), **three.js** (declarative 3D scenes)
 - A second tool (`render_html`): render model-written HTML/CSS/JS in a **sandboxed `iframe`** (opaque origin + CSP) for custom widgets the declarative engines cannot express
-- Streaming preview in the composer input dock
-- Engine asset bundling generalized (per-engine IIFE assets + a shared loader)
+- Engine asset bundling generalized (per-engine UMD assets + a shared lazy loader)
+- Verified end-to-end: all three engines render in a real browser; the sandbox runs inline scripts while blocking network
 
 ### v0.3 — action round-trip (planned)
 

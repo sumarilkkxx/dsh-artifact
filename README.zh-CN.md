@@ -2,22 +2,23 @@
 
 [English](README.md) · **简体中文**
 
-> 在 DeepSeek Harness 对话中内联渲染**交互式 ECharts 图表**。
+> 在 DeepSeek Harness 对话中内联渲染**交互式 ECharts / Mermaid / Three.js** 与沙箱化的自定义 HTML。
 
-`dsh-artifact` 让模型在对话里直接渲染**真实、可交互**的图表——不是手绘 SVG，也不是一堆文字。模型调用 `render_artifact` 工具，传入**声明式的 ECharts `option`**（纯 JSON、无函数），Web UI 就用真正的 ECharts 引擎渲染出来：tooltip、缩放、图例，以及 ECharts 支持的全部图表类型（柱状 / 折线 / 饼图 / 散点 / 热力图 / 雷达 / 仪表盘 / 漏斗 / 桑基图 / 关系图 / 地图 / 盒须图 / 旭日图 / K 线等）。
+`dsh-artifact` 让模型在对话里直接渲染**真实、可交互**的内容——不是手绘 SVG，也不是一堆文字。模型调用 `render_artifact`，传入**声明式 payload**——纯 JSON 的 ECharts `option`、Mermaid 图、或 Three.js 3D 场景——Web UI 就用真正的引擎渲染出来（tooltip、缩放、图例、图表、3D 预览）。第二个工具 `render_html` 则把任意自定义 HTML/CSS/JS 渲染进**沙箱 iframe**。
 
 ## 为什么做 dsh-artifact
 
 | | dsh-genui | dsh-visualize | **dsh-artifact** |
 |---|---|---|---|
-| 模型产物 | 白名单 JSON 组件树 | 任意 HTML/JS | **声明式 ECharts option** |
-| 真实图表引擎 | ✗（手绘 3 种图） | ✓（靠 HTML） | **✓（完整 ECharts）** |
+| 模型产物 | 白名单 JSON 组件树 | 任意 HTML/JS | **声明式 payload（ECharts / Mermaid / Three）** |
+| 真实引擎 | ✗（手绘 3 种图） | ✓（靠 HTML） | **✓（ECharts + Mermaid + Three.js）** |
 | 对话内内联 | ✓ | ✗（仅工具行） | ✓（工具卡片） |
-| 可交互 | ✓ | 部分 | ✓（tooltip / 缩放 / 图例） |
+| 可交互 | ✓ | 部分 | ✓（tooltip / 缩放 / 图例 / 3D） |
+| 任意 HTML 沙箱 | ✗ | ✓ | **✓（`render_html`）** |
 | 交互回环 | ✓ | ✗ | 路线图（v0.3） |
-| 安全模型 | 白名单 | 沙箱 iframe | **纯 JSON、无函数** |
+| 安全模型 | 白名单 | 沙箱 iframe | **纯 JSON + 沙箱 iframe** |
 
-`dsh-genui` 手绘了三种图表、能力有限；`dsh-visualize` 能渲染任意 HTML 却没有交互回环。`dsh-artifact` 把**声明式 JSON option 喂给真正的 ECharts 引擎**——模型最擅长写 JSON，却因此获得全量图表能力，成本更低，且以「纯 JSON、无函数」作为严格的安全边界。
+`dsh-genui` 手绘了三种图表、能力有限；`dsh-visualize` 能渲染任意 HTML 却没有交互回环。`dsh-artifact` 把**声明式 JSON payload 喂给真正的引擎**（ECharts、Mermaid、Three.js），模型最擅长写 JSON，却因此获得全量图表与 3D 能力，并额外提供**沙箱 HTML** 通道渲染自定义组件，成本更低，且以「纯 JSON + iframe 沙箱」作为严格的安全边界。
 
 ## 安装
 
@@ -44,16 +45,26 @@ dsh plugin --profile web add .
 
 模型会调用 `render_artifact` 并传入 ECharts option，图表即以交互卡片的形式出现在对话中。
 
-### 工具参数
+### `render_artifact`（图表 / 图 / 3D）
 
-| 参数 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `option` | object / string | 是 | ECharts 配置（纯 JSON，**禁止函数**；formatter 用字符串模板，如 `{c}%`） |
-| `engine` | string | 否 | 渲染引擎，当前仅支持 `echarts` |
-| `title` | string | 否 | 卡片标题 |
-| `height` | number | 否 | 图表高度 px（默认 360，最小 120） |
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| `engine` | string | `echarts`（默认）· `mermaid` · `three` |
+| `option` | object / string | ECharts 配置——engine=echarts（纯 JSON，**禁止函数**；字符串模板如 `{c}%`） |
+| `code` | string | Mermaid 图源码——engine=mermaid（flowchart / sequenceDiagram / classDiagram / gantt / stateDiagram / pie / erDiagram / journey） |
+| `spec` | object / string | Three.js 场景——engine=three（`{"meshes":[{shape,color,size,position,rotation}],"background","ambient"}`） |
+| `title` | string | 卡片标题 |
+| `height` | number | 高度 px（默认 360，最小 120） |
 
-模型实际产出的示例 option：
+### `render_html`（沙箱化自定义组件）
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| `html` | string | 自包含的 HTML 片段或完整文档（允许内联脚本/样式；外部资源被拦截） |
+| `title` | string | 卡片标题 |
+| `height` | number | 高度 px（默认 400，最小 120） |
+
+模型实际产出的示例：
 
 ```json
 {
@@ -71,24 +82,24 @@ dsh plugin --profile web add .
 
 ### 安全模型
 
-- `option` 必须是**纯 JSON**——函数、`undefined`、`symbol` 会被宿主半拒绝（并引导模型用 ECharts 字符串模板写 formatter）。
+- 声明式 payload（`option` / `spec`）必须是**纯 JSON**——函数、`undefined`、`symbol` 会被宿主半拒绝。
 - 引擎资产只从插件自己的路由提供，路径穿越被拦截。
-- v0.1 没有任何「任意 HTML/脚本」通道。
+- `render_html` 组件运行在**沙箱 iframe**（不透明源）中，CSP 拦截网络、顶层导航与表单提交，仅允许内联脚本/样式。
 
 ## 工作原理
 
 ```
 dsh-artifact/
-├── index.js               # 宿主半：render_artifact 工具 + system prompt + 资产路由
-├── client.js              # 浏览器半：keyed toolview 槽位 + 懒加载 ECharts 渲染
+├── index.js               # 宿主半：render_artifact + render_html 工具 + 资产路由
+├── client.js              # 浏览器半：keyed toolviews + 引擎分发 + 沙箱 iframe
 ├── cordis.patch.yml       # bundle 层（insert dsh-artifact）
 ├── package.json           # dsh.bundle + dsh.client 清单
-├── assets/echarts.min.js  # ECharts UMD（已构建，随仓库提交，供 git 安装）
-└── scripts/build.mjs      # 复制 echarts dist -> assets/
+├── assets/                # 引擎 UMD（echarts/mermaid/three；已构建，随仓库提交）
+└── scripts/build.mjs      # 复制引擎 dist -> assets/
 ```
 
-1. **宿主半**（`index.js`）：以 raw JSON-Schema 定义注册 `render_artifact` 工具，注入 system-prompt 引导，并从 `/plugins/dsh-artifact/assets/*` 提供 ECharts 资产。
-2. **浏览器半**（`client.js`）：为 `render_artifact` 注册 keyed `tool.call.toolview` 槽位。工具结果落定后，宿主通过 `presentationMeta` 把解析好的 option 投影到结果 `meta`，toolview 读取后用真实 ECharts 引擎渲染（首次使用时懒加载）。
+1. **宿主半**（`index.js`）：以 raw JSON-Schema 定义注册 `render_artifact` 与 `render_html` 两个工具，注入 system-prompt 引导，并从 `/plugins/dsh-artifact/assets/*` 提供引擎资产。
+2. **浏览器半**（`client.js`）：为两个工具注册 keyed `tool.call.toolview` 槽位。工具结果落定后，宿主通过 `presentationMeta` 把解析好的 payload 投影到结果 `meta`，toolview 按 `meta.engine` 分发并懒加载对应引擎；`render_html` 渲染进带 CSP 的沙箱 `iframe`。
 3. **零 `@deepseek-ai/*` 运行时依赖**——两个半都是手写纯 JS：宿主只用 Node 内置模块，浏览器半从 loader 的模块表取 `react`。这刻意规避了 developer-preview 阶段的版本漂移陷阱（`@deepseek-ai/dsh-tools` 的过期 `latest` 标签、跨包 rc 线不一致等）。
 
 ## 开发
@@ -103,21 +114,21 @@ dsh-artifact/
 
 | 路径 | 作用 |
 |---|---|
-| `index.js` | 宿主半——`render_artifact` 工具定义、system-prompt 引导、懒加载资产路由 |
-| `client.js` | 浏览器半——keyed toolview 组件、ECharts 懒加载（module-loader 协议） |
+| `index.js` | 宿主半——`render_artifact` + `render_html` 工具定义、system-prompt 引导、懒加载资产路由 |
+| `client.js` | 浏览器半——keyed toolviews、引擎分发（echarts/mermaid/three）、沙箱 iframe |
 | `cordis.patch.yml` | bundle 层；`name` 是**包名**（经 node_modules 解析），不是相对路径 |
 | `package.json` | `dsh.bundle` + `dsh.client` 清单、`exports["./client"]`、构建脚本 |
-| `assets/echarts.min.js` | ECharts UMD 构建产物（已提交，保证 `dsh plugin add github:...` 免构建） |
-| `scripts/build.mjs` | 把 `node_modules/echarts/dist/echarts.min.js` 复制到 `assets/` |
+| `assets/*.min.js` | 引擎 UMD 构建产物（echarts/mermaid/three；已提交，保证 `dsh plugin add github:...` 免构建） |
+| `scripts/build.mjs` | 把引擎 dist 复制到 `assets/` |
 
 ### 构建
 
 ```sh
-npm install     # 安装 echarts（仅构建期依赖，不是运行时依赖）
-npm run build   # 复制 echarts UMD 到 assets/
+npm install     # 安装 echarts/mermaid/three（仅构建期依赖，不是运行时依赖）
+npm run build   # 复制引擎 UMD 到 assets/
 ```
 
-`echarts` 是 **devDependency**，只用于产出 `assets/echarts.min.js`。插件本身零运行时依赖，所以 `link:` 安装无需任何额外步骤。升级引擎时，改 `package.json` 里的 echarts devDependency 版本再重新 `npm run build` 即可。
+引擎都是 **devDependency**，只用于产出 `assets/*.min.js`。插件本身零运行时依赖，所以 `link:` 安装无需任何额外步骤。升级引擎时，改 `package.json` 里对应 devDependency 版本再重新 `npm run build` 即可。
 
 ### 本地调试循环
 
@@ -159,12 +170,12 @@ node scripts/smoke-test.mjs
 - 纯 JSON 安全边界（函数 / `undefined` / `symbol` 拒绝 + 路径穿越拦截）
 - 端到端验收：真实模型调用 → 工具 → 结果 meta → 浏览器 canvas
 
-### v0.2 — 多引擎 + HTML 沙箱（规划中）
+### v0.2 — 多引擎 + HTML 沙箱 ✅ 已发布
 
-- 新增引擎：**mermaid**（流程图 / 时序图 / 类图 / 甘特图）、**three.js**（3D 场景）
+- 新增引擎：**mermaid**（流程图 / 时序图 / 类图 / 甘特图 / 状态图 / 饼图 / ER 图 / 旅程图）、**three.js**（声明式 3D 场景）
 - 第二个工具（`render_html`）：把模型写的 HTML/CSS/JS 渲染进**沙箱 `iframe`**（不透明源 + CSP），覆盖声明式引擎表达不了的自定义组件
-- 输入区 dock 的流式预览
-- 引擎资产打包通用化（每引擎一个 IIFE 资产 + 共享加载器）
+- 引擎资产打包通用化（每引擎一个 UMD 资产 + 共享懒加载器）
+- 端到端验收：三个引擎均在真实浏览器渲染；沙箱运行内联脚本的同时拦截网络
 
 ### v0.3 — 交互回环（规划中）
 

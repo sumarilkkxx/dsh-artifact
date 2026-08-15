@@ -1,15 +1,24 @@
-// dsh-artifact build: copy the ECharts UMD distribution into assets/ so the
-// host half can serve it as a lazy on-demand engine. The plugin ships the
-// copied asset; echarts itself is a build-time (dev) dependency only.
+// dsh-artifact build: copy the ECharts / Mermaid / Three UMD distributions into
+// assets/ so the host half can serve them as lazy on-demand engines. The plugin
+// ships the copied assets; the engines themselves are build-time (dev)
+// dependencies only.
 import { copyFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const src = resolve(root, 'node_modules', 'echarts', 'dist', 'echarts.min.js')
 const destDir = resolve(root, 'assets')
-const dest = resolve(destDir, 'echarts.min.js')
-
 await mkdir(destDir, { recursive: true })
-await copyFile(src, dest)
-console.log(`[dsh-artifact] copied echarts.min.js -> assets/echarts.min.js`)
+
+const engines = [
+  ['echarts', 'echarts/dist/echarts.min.js', 'echarts.min.js'],
+  ['mermaid', 'mermaid/dist/mermaid.min.js', 'mermaid.min.js'],
+  ['three', 'three/build/three.min.js', 'three.min.js'],
+]
+
+for (const [name, srcRel, out] of engines) {
+  const src = resolve(root, 'node_modules', srcRel)
+  const dest = resolve(destDir, out)
+  await copyFile(src, dest)
+  console.log(`[dsh-artifact] copied ${name} -> assets/${out}`)
+}
