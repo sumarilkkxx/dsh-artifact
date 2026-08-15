@@ -1,0 +1,38 @@
+{
+  "name": "dsh-artifact",
+  "version": "0.1.0",
+  "description": "Render ECharts (and later more engines) inline in DeepSeek Harness conversations — declarative options fed to the real charting engine.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./client": "./client.js"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "assets",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "echarts": "^5.5.1"
+  },
+  "engines": {
+    "node": ">=22.19"
+  }
+}

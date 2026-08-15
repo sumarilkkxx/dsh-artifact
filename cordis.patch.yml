@@ -1,0 +1,9 @@
+# dsh-artifact bundle for DeepSeek Harness (dsh).
+# Inserted into a profile's composition when this bundle is installed
+# (`dsh plugin --profile <name> add dsh-artifact`). The row resolves the
+# package by name through the profile's node_modules; the node half registers
+# the render_artifact tool + system-prompt guidance + the ECharts asset route,
+# and the `./client` half registers the browser toolview renderer.
+- insert:
+    - id: dsh-artifact
+      name: 'dsh-artifact'
