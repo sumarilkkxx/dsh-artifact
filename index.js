@@ -90,14 +90,19 @@ function parseJson(raw) {
   }
 }
 
-/** Recursively reject values JSON cannot faithfully carry (functions/undefined/symbol/bigint). */
+/** Recursively reject values JSON cannot faithfully carry. */
 function isJsonSafe(value, depth) {
   if (depth > 128) return false
   if (value === null) return true
   const t = typeof value
   if (t === 'function' || t === 'undefined' || t === 'symbol' || t === 'bigint') return false
+  if (t === 'number') return Number.isFinite(value)
   if (Array.isArray(value)) return value.every((v) => isJsonSafe(v, depth + 1))
-  if (t === 'object') return Object.keys(value).every((k) => isJsonSafe(value[k], depth + 1))
+  if (t === 'object') {
+    const proto = Object.getPrototypeOf(value)
+    if (proto !== Object.prototype && proto !== null) return false
+    return Object.keys(value).every((k) => isJsonSafe(value[k], depth + 1))
+  }
   return true
 }
 
@@ -110,30 +115,38 @@ function jsonBytes(value) {
   }
 }
 
+/** Whether an object carries any render_artifact / render_html argument field. */
+function isArgsShaped(obj) {
+  return obj !== null && typeof obj === 'object' && !Array.isArray(obj) &&
+    ('option' in obj || 'code' in obj || 'spec' in obj || 'html' in obj || 'engine' in obj)
+}
+
 /**
  * Unwrap the tool-call bridge's argument shapes. The bridge has been observed
  * to deliver arguments as `{field:<object>}`, `{field:"<json>"}`, or the
  * double-encoded `{arguments:"<json>"}` / `{arguments:<object>}` wrappers.
+ * A bare string is either the whole args object serialized, or a bare payload
+ * (e.g. an ECharts option) serialized: parse it, recurse only when it recovers
+ * an args-shaped object, and otherwise treat it as `option`.
  */
 function unwrapArgs(args) {
-  // A bare string is either the whole args object serialized, or a payload
-  // (e.g. an ECharts option) serialized. Parse it and recurse when it recovers
-  // an args-shaped object; otherwise fall back to treating it as `option`.
   if (typeof args === 'string') {
     const parsed = parseJson(args)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? unwrapArgs(parsed)
-      : { option: args }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return isArgsShaped(parsed) ? unwrapArgs(parsed) : { option: parsed }
+    }
+    return { option: args }
   }
   if (typeof args !== 'object' || args === null) return {}
-  if ('option' in args || 'code' in args || 'spec' in args || 'html' in args || 'engine' in args) return args
+  if (isArgsShaped(args)) return args
   if ('arguments' in args) {
     const a = args.arguments
     if (typeof a === 'string') {
       const parsed = parseJson(a)
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? unwrapArgs(parsed)
-        : { option: a }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return isArgsShaped(parsed) ? unwrapArgs(parsed) : { option: parsed }
+      }
+      return { option: a }
     }
     if (a && typeof a === 'object') return unwrapArgs(a)
   }
@@ -172,7 +185,7 @@ function checkEcharts(option) {
     return `${TOOL_NAME}: "option" must be a JSON object (not a string/array).`
   }
   if (!isJsonSafe(option, 0)) {
-    return `${TOOL_NAME}: "option" contains non-JSON values (functions/undefined/bigint). Use ECharts string templates for formatters instead of functions.`
+    return `${TOOL_NAME}: "option" contains non-JSON values (functions, BigInt, NaN/Infinity, or non-plain objects). Use ECharts string templates for formatters instead of functions.`
   }
   const bytes = jsonBytes(option)
   if (bytes < 0) {
@@ -201,7 +214,7 @@ function checkThree(spec) {
     return `${TOOL_NAME}: "spec" must be a JSON object (engine=three), e.g. {"meshes":[...]}.`
   }
   if (!isJsonSafe(spec, 0)) {
-    return `${TOOL_NAME}: "spec" contains non-JSON values (functions/undefined/bigint).`
+    return `${TOOL_NAME}: "spec" contains non-JSON values (functions, BigInt, NaN/Infinity, or non-plain objects).`
   }
   if (!Array.isArray(spec.meshes) || spec.meshes.length === 0) {
     return `${TOOL_NAME}: "spec" needs a non-empty "meshes" array.`
