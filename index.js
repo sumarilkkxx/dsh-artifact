@@ -90,12 +90,12 @@ function parseJson(raw) {
   }
 }
 
-/** Recursively reject values JSON cannot faithfully carry (functions/undefined/symbol). */
+/** Recursively reject values JSON cannot faithfully carry (functions/undefined/symbol/bigint). */
 function isJsonSafe(value, depth) {
   if (depth > 128) return false
   if (value === null) return true
   const t = typeof value
-  if (t === 'function' || t === 'undefined' || t === 'symbol') return false
+  if (t === 'function' || t === 'undefined' || t === 'symbol' || t === 'bigint') return false
   if (Array.isArray(value)) return value.every((v) => isJsonSafe(v, depth + 1))
   if (t === 'object') return Object.keys(value).every((k) => isJsonSafe(value[k], depth + 1))
   return true
@@ -116,13 +116,26 @@ function jsonBytes(value) {
  * double-encoded `{arguments:"<json>"}` / `{arguments:<object>}` wrappers.
  */
 function unwrapArgs(args) {
-  if (typeof args === 'string') return { option: args }
+  // A bare string is either the whole args object serialized, or a payload
+  // (e.g. an ECharts option) serialized. Parse it and recurse when it recovers
+  // an args-shaped object; otherwise fall back to treating it as `option`.
+  if (typeof args === 'string') {
+    const parsed = parseJson(args)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? unwrapArgs(parsed)
+      : { option: args }
+  }
   if (typeof args !== 'object' || args === null) return {}
   if ('option' in args || 'code' in args || 'spec' in args || 'html' in args || 'engine' in args) return args
   if ('arguments' in args) {
     const a = args.arguments
-    if (typeof a === 'string') return { option: a }
-    if (a && typeof a === 'object') return a
+    if (typeof a === 'string') {
+      const parsed = parseJson(a)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? unwrapArgs(parsed)
+        : { option: a }
+    }
+    if (a && typeof a === 'object') return unwrapArgs(a)
   }
   return args
 }
@@ -148,6 +161,8 @@ function resolveMeta(args) {
   if (engine === 'mermaid') payload = typeof a.code === 'string' ? a.code : undefined
   else if (engine === 'three') payload = normalizeObjectPayload(a.spec)
   else payload = normalizeObjectPayload(a.option)
+  // Defensive: never let non-JSON values (e.g. BigInt) into the persisted meta.
+  if (payload !== undefined && !isJsonSafe(payload, 0)) payload = undefined
   return { engine, payload, title, height }
 }
 
@@ -157,10 +172,14 @@ function checkEcharts(option) {
     return `${TOOL_NAME}: "option" must be a JSON object (not a string/array).`
   }
   if (!isJsonSafe(option, 0)) {
-    return `${TOOL_NAME}: "option" contains non-JSON values (functions/undefined). Use ECharts string templates for formatters instead of functions.`
+    return `${TOOL_NAME}: "option" contains non-JSON values (functions/undefined/bigint). Use ECharts string templates for formatters instead of functions.`
   }
-  if (jsonBytes(option) > OPTION_MAX_BYTES) {
-    return `${TOOL_NAME}: "option" is too large (${jsonBytes(option)} bytes over the ${OPTION_MAX_BYTES}-byte cap).`
+  const bytes = jsonBytes(option)
+  if (bytes < 0) {
+    return `${TOOL_NAME}: "option" is not JSON-serializable (contains values JSON cannot carry, e.g. BigInt).`
+  }
+  if (bytes > OPTION_MAX_BYTES) {
+    return `${TOOL_NAME}: "option" is too large (${bytes} bytes over the ${OPTION_MAX_BYTES}-byte cap).`
   }
   return null
 }
@@ -182,12 +201,16 @@ function checkThree(spec) {
     return `${TOOL_NAME}: "spec" must be a JSON object (engine=three), e.g. {"meshes":[...]}.`
   }
   if (!isJsonSafe(spec, 0)) {
-    return `${TOOL_NAME}: "spec" contains non-JSON values (functions/undefined).`
+    return `${TOOL_NAME}: "spec" contains non-JSON values (functions/undefined/bigint).`
   }
   if (!Array.isArray(spec.meshes) || spec.meshes.length === 0) {
     return `${TOOL_NAME}: "spec" needs a non-empty "meshes" array.`
   }
-  if (jsonBytes(spec) > SPEC_MAX_BYTES) {
+  const specBytes = jsonBytes(spec)
+  if (specBytes < 0) {
+    return `${TOOL_NAME}: "spec" is not JSON-serializable (contains values JSON cannot carry, e.g. BigInt).`
+  }
+  if (specBytes > SPEC_MAX_BYTES) {
     return `${TOOL_NAME}: "spec" is too large (over the ${SPEC_MAX_BYTES}-byte cap).`
   }
   return null
