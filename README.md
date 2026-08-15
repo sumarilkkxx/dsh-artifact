@@ -1,80 +1,186 @@
 # dsh-artifact
 
-在 DeepSeek Harness 对话中内联渲染**交互式 ECharts 图表**。
+> Render interactive **ECharts** charts inline in DeepSeek Harness conversations.
 
-模型调用 `render_artifact` 工具，传入声明式的 ECharts `option`（纯 JSON、无函数），Web UI 就会在对话里渲染出一张**真实、可交互**的图表卡片——tooltip、缩放、图例，以及 ECharts 支持的全部图表类型：柱状 / 折线 / 饼图 / 散点 / 热力图 / 雷达 / 仪表盘 / 漏斗 / 桑基图 / 关系图 / 地图 / 盒须图 / 旭日图等。
+[简体中文](README.zh-CN.md)
 
-## 为什么
+`dsh-artifact` lets the model render real, interactive charts — not hand-drawn SVG, not a wall of text — directly inside the conversation. The model calls the `render_artifact` tool with a **declarative ECharts `option`** (plain JSON, no functions), and the Web UI renders it with the actual ECharts engine: tooltip, zoom, legend, and every chart type ECharts supports (bar, line, pie, scatter, heatmap, radar, gauge, funnel, sankey, graph, map, boxplot, sunburst, candlestick, and more).
 
-- `dsh-genui` 手绘了三种图表（柱状 / 折线 / 环图），能力有限；
-- `dsh-visualize` 能渲染任意 HTML，但没有「交互回环」；
-- `dsh-artifact` 把**声明式 JSON option 喂给真正的 ECharts 引擎**——模型最擅长写 JSON，却因此获得全量图表能力，无需写任何代码。
+## Why dsh-artifact
 
-## 安装
+| | dsh-genui | dsh-visualize | **dsh-artifact** |
+|---|---|---|---|
+| Model output | whitelisted JSON tree | arbitrary HTML/JS | **declarative ECharts option** |
+| Real chart engine | ✗ (3 hand-drawn kinds) | ✓ (via HTML) | **✓ (full ECharts)** |
+| Inline in conversation | ✓ | ✗ (tool row only) | ✓ (tool card) |
+| Interactive | ✓ | partial | ✓ (tooltip / zoom / legend) |
+| Action round-trip | ✓ | ✗ | roadmap (v0.3) |
+| Security model | whitelist | sandboxed iframe | **pure JSON, no functions** |
+
+`dsh-genui` hand-draws three chart kinds; `dsh-visualize` renders arbitrary HTML but has no round-trip. `dsh-artifact` feeds the **real ECharts engine** with a **declarative JSON option** the model is already excellent at writing — full chart capability at a lower authoring cost, behind a strict JSON-only security boundary.
+
+## Install
 
 ```sh
-# 从 GitHub 安装（推荐，仓库已包含构建产物，无需额外构建）
+# From GitHub (recommended — ships prebuilt assets, no build step)
 dsh plugin --profile web add github:sumarilkkxx/dsh-artifact
 
-# 本地目录链接（开发调试）
+# Local link (development)
 dsh plugin --profile web add link:/path/to/dsh-artifact
 
-# 从项目目录
+# From the project directory
 dsh plugin --profile web add .
 ```
 
-重启 `dsh web` 并强制刷新页面（Cmd/Ctrl+Shift+R）。
+Restart `dsh web` and hard-refresh the page (Cmd/Ctrl+Shift+R).
 
-## 使用
+> Requires `pnpm` on `PATH` (the `dsh plugin` command forwards to pnpm).
 
-直接对模型说：
+## Usage
 
-> 用 render_artifact 画一张柱状图，展示 2024 年四个季度的收入：120、180、150、210 万元
+Ask the model for a chart:
 
-模型会调用 `render_artifact` 工具并传入 ECharts option，图表即出现在对话的工具卡片中。
+> Draw a bar chart of 2024 quarterly revenue: 120, 180, 150, 210 (in 10k CNY)
 
-**工具参数**：
+The model calls `render_artifact` with an ECharts option, and the chart appears as an interactive card in the conversation.
 
-| 参数 | 类型 | 说明 |
-|---|---|---|
-| `option` | object / string | ECharts 图表配置（纯 JSON，**禁止函数**；formatter 用字符串模板，如 `{c}%`） |
-| `engine` | string | 渲染引擎，当前仅支持 `echarts` |
-| `title` | string | 卡片标题（可选） |
-| `height` | number | 图表高度 px（默认 360，最小 120） |
+### Tool reference
 
-示例（模型实际产出）：
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `option` | object / string | yes | ECharts option (plain JSON, **no functions**; use string templates like `{c}%` for formatters) |
+| `engine` | string | no | Rendering engine; only `echarts` in this version |
+| `title` | string | no | Card title |
+| `height` | number | no | Chart height in px (default 360, min 120) |
+
+Example option the model produces:
 
 ```json
 {
   "engine": "echarts",
-  "title": "2024 年季度收入柱状图",
+  "title": "2024 quarterly revenue",
   "option": {
-    "title":  { "text": "2024 年季度收入（万元）", "left": "center" },
+    "title":  { "text": "Revenue (10k CNY)", "left": "center" },
     "tooltip": { "trigger": "axis" },
-    "xAxis":   { "type": "category", "name": "季度", "data": ["Q1", "Q2", "Q3", "Q4"] },
-    "yAxis":   { "type": "value", "name": "收入（万元）" },
-    "series":  [{ "type": "bar", "name": "收入", "data": [120, 180, 150, 210] }]
+    "xAxis":   { "type": "category", "name": "Quarter", "data": ["Q1", "Q2", "Q3", "Q4"] },
+    "yAxis":   { "type": "value", "name": "Revenue" },
+    "series":  [{ "type": "bar", "name": "Revenue", "data": [120, 180, 150, 210] }]
   }
 }
 ```
 
-## 工作原理
+### Security model
 
-- **宿主半**（`index.js`）：注册 `render_artifact` 工具（raw JSON-Schema 定义）、system-prompt 引导、以及 `/plugins/dsh-artifact/assets/*` 资产路由，懒加载 ECharts 引擎。
-- **浏览器半**（`client.js`）：按工具名注册 `tool.call.toolview` 槽位，从结果 meta 读取 option，用真正的 ECharts 引擎渲染。
-- **零 `@deepseek-ai/*` 运行时依赖**：宿主半与浏览器半均为手写纯 JS，彻底规避 developer-preview 阶段的版本漂移问题；唯一构建动作是把 echarts UMD 复制进 `assets/`。
+- The `option` must be **pure JSON** — functions, `undefined`, and symbols are rejected by the host half (the model is instructed to use ECharts string templates for formatters).
+- The engine asset is served only from the plugin's own route; path traversal is blocked.
+- No arbitrary HTML/script path exists in v0.1.
 
-## 开发
+## How it works
 
-```sh
-npm install     # 安装 echarts（仅构建期依赖，不随插件下发）
-npm run build   # 复制 echarts UMD 到 assets/
+```
+dsh-artifact/
+├── index.js               # host half: render_artifact tool + system prompt + asset route
+├── client.js              # browser half: keyed toolview slot + lazy ECharts render
+├── cordis.patch.yml       # bundle layer (insert dsh-artifact)
+├── package.json           # dsh.bundle + dsh.client manifests
+├── assets/echarts.min.js  # ECharts UMD (built, shipped for git-install)
+└── scripts/build.mjs      # copies echarts dist -> assets/
 ```
 
-## 路线图
+1. **Host half** (`index.js`) registers the `render_artifact` tool as a raw JSON-Schema definition, injects system-prompt guidance, and serves the ECharts asset from `/plugins/dsh-artifact/assets/*`.
+2. **Browser half** (`client.js`) registers the keyed `tool.call.toolview` slot for `render_artifact`. When a result settles, the host projects the resolved option into the result `meta` (via `presentationMeta`); the toolview reads it and renders with the real ECharts engine, lazy-loaded on first use.
+3. **Zero `@deepseek-ai/*` runtime dependencies** — both halves are hand-written plain JS. The host uses only Node builtins; the browser half takes `react` from the loader's module table. This deliberately avoids the developer-preview version-drift trap (the stale `latest` tag on `@deepseek-ai/dsh-tools`, and cross-package rc-line mismatches).
 
-- **v0.2**：多引擎（mermaid / three）+ 任意 HTML 沙箱层
-- **v0.3**：postMessage action 回环（交互数据回传模型，闭环）
+## Development
+
+### Prerequisites
+
+- Node.js `>= 22.19`
+- `pnpm` on `PATH` (required by `dsh plugin add`)
+- `git`
+
+### Project layout
+
+| Path | Purpose |
+|---|---|
+| `index.js` | Host half — `render_artifact` tool definition, system-prompt section, lazy-asset route |
+| `client.js` | Browser half — keyed toolview component, ECharts lazy loader (module-loader protocol) |
+| `cordis.patch.yml` | Bundle layer; `name` is a **package name** resolved through node_modules, not a path |
+| `package.json` | `dsh.bundle` + `dsh.client` manifests, `exports["./client"]`, build scripts |
+| `assets/echarts.min.js` | ECharts UMD build (committed so `dsh plugin add github:...` needs no build) |
+| `scripts/build.mjs` | Copies `node_modules/echarts/dist/echarts.min.js` → `assets/` |
+
+### Build
+
+```sh
+npm install     # installs echarts (build-time only; NOT a runtime dependency)
+npm run build   # copies the echarts UMD bundle into assets/
+```
+
+`echarts` is a **devDependency** used only to produce `assets/echarts.min.js`. The plugin itself has zero runtime dependencies, so a `link:` install needs nothing extra. Bump the engine by editing the `echarts` devDependency version and re-running `npm run build`.
+
+### Local debug loop
+
+```sh
+# from the project directory
+dsh plugin --profile web add .
+
+# restart dsh web + hard-refresh the page
+```
+
+The host and browser halves are plain files the profile reads directly, so code edits need only a restart (no build step). Rebuild only when you change the engine asset.
+
+### Verification
+
+```sh
+# compose-check: confirms the bundle layer parses and composes
+dsh --profile <name> --dump-config
+
+# local smoke test (not shipped in the repo)
+node scripts/smoke-test.mjs
+
+# browser render check: load the profile, confirm zero console errors and a painted canvas
+# (see the acceptance flow used during development)
+```
+
+### Design notes
+
+- **Raw tool definition.** `render_artifact` is registered as a plain JSON-Schema object (not `defineTool`) because out-of-tree resolution of `@deepseek-ai/dsh-tools` is unreliable on the developer-preview line. The host half owns its own validation.
+- **Optional service via `ctx.inject`.** The asset route uses `ctx.inject(['webServer'], cb)` so the plugin stays inert under headless profiles (no webServer service).
+- **Replay-safe presentation.** The chart option travels to the browser through the tool result's `meta` (`presentationMeta`), which must stay pure (no file I/O) so session replay can rebuild the card.
+
+## Roadmap
+
+### v0.1 — ECharts tool channel ✅ shipped
+
+- `render_artifact` tool (raw JSON-Schema definition, function-free option validation)
+- Real ECharts engine, lazy-loaded from a self-hosted `/plugins/dsh-artifact/assets/*` route
+- Keyed `tool.call.toolview` browser slot
+- Pure-JSON security boundary (function/`undefined`/symbol rejection + path-traversal guard)
+- Verified end-to-end: real model call → tool → result meta → browser canvas
+
+### v0.2 — multi-engine + HTML sandbox (planned)
+
+- Additional engines: **mermaid** (flow/sequence/class/gantt), **three.js** (3D scenes)
+- A second tool (`render_html`): render model-written HTML/CSS/JS in a **sandboxed `iframe`** (opaque origin + CSP) for custom widgets the declarative engines cannot express
+- Streaming preview in the composer input dock
+- Engine asset bundling generalized (per-engine IIFE assets + a shared loader)
+
+### v0.3 — action round-trip (planned)
+
+- `postMessage`-based `[genui-action]` loop: interactive components send data back to the model, which re-renders — the capability `dsh-visualize` explicitly lacks
+- Local-first interactions (tabs, selection, local grading) with zero model round-trip
+
+### Later / ideas
+
+- Real icon system (SVG icon library, not emoji)
+- Native live data binding — bind components to host state (token usage, git status, subagent/job progress) without a model round-trip
+- More engines: katex (formulas), leaflet (maps), frappe-gantt (timelines)
+- npm publish + `awesome-dsh-plugin` listing
+
+## Contributing
+
+PRs welcome. Please keep the host and browser halves free of `@deepseek-ai/*` runtime imports, and ship any engine change as a committed `assets/` artifact (or update `scripts/build.mjs`). Add the `dsh-plugin` GitHub topic to help others discover the plugin.
 
 ## License
 
