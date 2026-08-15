@@ -2,8 +2,6 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-<p align="center"><img src="assets/logo.svg" width="128" alt="dsh-artifact logo"/></p>
-
 > Render interactive **ECharts** charts inline in DeepSeek Harness conversations.
 
 `dsh-artifact` lets the model render real, interactive charts — not hand-drawn SVG, not a wall of text — directly inside the conversation. The model calls the `render_artifact` tool with a **declarative ECharts `option`** (plain JSON, no functions), and the Web UI renders it with the actual ECharts engine: tooltip, zoom, legend, and every chart type ECharts supports (bar, line, pie, scatter, heatmap, radar, gauge, funnel, sankey, graph, map, boxplot, sunburst, candlestick, and more).

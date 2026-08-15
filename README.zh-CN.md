@@ -2,8 +2,6 @@
 
 [English](README.md) · **简体中文**
 
-<p align="center"><img src="assets/logo.svg" width="128" alt="dsh-artifact logo"/></p>
-
 > 在 DeepSeek Harness 对话中内联渲染**交互式 ECharts 图表**。
 
 `dsh-artifact` 让模型在对话里直接渲染**真实、可交互**的图表——不是手绘 SVG，也不是一堆文字。模型调用 `render_artifact` 工具，传入**声明式的 ECharts `option`**（纯 JSON、无函数），Web UI 就用真正的 ECharts 引擎渲染出来：tooltip、缩放、图例，以及 ECharts 支持的全部图表类型（柱状 / 折线 / 饼图 / 散点 / 热力图 / 雷达 / 仪表盘 / 漏斗 / 桑基图 / 关系图 / 地图 / 盒须图 / 旭日图 / K 线等）。
