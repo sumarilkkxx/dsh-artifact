@@ -69,6 +69,19 @@ const SKILL_CONTENT = `# dsh-artifact 渲染指南
 \`{"engine":"three","spec":{"meshes":[{"shape":"box","color":"#4d6bfe","size":1}],"background":"#16213a"}}\`
 - \`shape\` 白名单：box / sphere / cone / cylinder / torus。
 
+## 主题（可选 \`theme\` 参数）
+
+为图表 / 3D 快速套用配色主题（用户也能在卡片上方的主题条里点击切换，无需重新生成）：
+
+- \`auto\`（默认，保留 payload 自带颜色）
+- \`tech-blue\` 科技蓝（深蓝底 + 蓝青系）
+- \`minimal\` 极简白（浅色底 + 蓝灰系）
+- \`night-purple\` 暗夜紫（深紫底 + 紫罗兰系）
+- \`forest\` 墨绿（深绿底 + 翡翠系）
+- \`amber\` 暖橙（暖深底 + 琥珀系）
+
+当用户说「换成暗夜紫主题」「用深色科技蓝背景」时，在 render_artifact 调用里加 \`"theme":"night-purple"\`（或对应 id），并保持原有 \`option\` / \`spec\` 不变。
+
 ## render_html（自定义交互组件）
 
 当声明式引擎表达不了时，渲染任意 HTML/CSS/JS：
@@ -211,7 +224,7 @@ function resolveMeta(args) {
   else payload = normalizeObjectPayload(a.option)
   // Defensive: never let non-JSON values (e.g. BigInt) into the persisted meta.
   if (payload !== undefined && !isJsonSafe(payload, 0)) payload = undefined
-  return { engine, payload, title, height }
+  return { engine, payload, title, height, theme: typeof a.theme === 'string' ? a.theme : undefined }
 }
 
 /** Validate an ECharts option; returns a message on failure, else null. */
@@ -307,6 +320,10 @@ function createRenderArtifactTool() {
             { type: 'string', description: 'The three.js scene spec serialized as a JSON string.' },
           ],
           description: 'Declarative 3D scene (engine=three): {"meshes":[{shape,color,size,position,rotation}],"background","ambient"}.',
+        },
+        theme: {
+          type: 'string',
+          description: 'Optional color theme: auto (默认) / tech-blue (科技蓝) / minimal (极简白) / night-purple (暗夜紫) / forest (墨绿) / amber (暖橙). Overrides background + series palette + text color.',
         },
         title: { type: 'string', description: 'Optional card title.' },
         height: { type: 'number', description: 'Optional height in px (default 360, min 120).' },

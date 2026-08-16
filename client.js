@@ -92,20 +92,49 @@ window.__ModuleLoader__.load({
       return typeof c === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c) ? c : null
     }
 
+    // ---------- themes ----------
+
+    // Tasteful, professional palettes inspired by ECharts / Chart.js / AntV
+    // default dark & light themes. `auto` keeps the payload's own colors;
+    // every other theme overrides background + series/mesh palette + text
+    // color for a cohesive look.
+    var THEMES = [
+      { id: 'auto', label: '默认', swatch: 'linear-gradient(135deg,#cbd5e1,#64748b)', background: null, palette: null, text: null, dark: false },
+      { id: 'tech-blue', label: '科技蓝', swatch: 'linear-gradient(135deg,#0f172a,#3b82f6)', background: '#0f172a', palette: ['#3b82f6', '#38bdf8', '#818cf8', '#22d3ee', '#60a5fa', '#a78bfa'], text: '#e2e8f0', dark: true },
+      { id: 'minimal', label: '极简白', swatch: 'linear-gradient(135deg,#f8fafc,#0ea5e9)', background: '#f8fafc', palette: ['#0ea5e9', '#475569', '#64748b', '#38bdf8', '#94a3b8', '#1e293b'], text: '#1e293b', dark: false },
+      { id: 'night-purple', label: '暗夜紫', swatch: 'linear-gradient(135deg,#1a1333,#8b5cf6)', background: '#1a1333', palette: ['#8b5cf6', '#a78bfa', '#c4b5fd', '#6d28d9', '#f472b6', '#60a5fa'], text: '#ede9fe', dark: true },
+      { id: 'forest', label: '墨绿', swatch: 'linear-gradient(135deg,#0f1f1a,#34d399)', background: '#0f1f1a', palette: ['#34d399', '#2dd4bf', '#10b981', '#4ade80', '#a3e635', '#14b8a6'], text: '#ecfdf5', dark: true },
+      { id: 'amber', label: '暖橙', swatch: 'linear-gradient(135deg,#1c1917,#f59e0b)', background: '#1c1917', palette: ['#f59e0b', '#fb923c', '#fbbf24', '#f97316', '#fca5a5', '#fcd34d'], text: '#fef3c7', dark: true },
+    ]
+
+    function themeById(id) {
+      for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) return THEMES[i]
+      return THEMES[0]
+    }
+
     // ---------- engine renderers (each returns a disposer) ----------
 
-    function renderEcharts(el, echarts, option) {
+    function renderEcharts(el, echarts, option, theme) {
       if (!option || typeof option !== 'object') { el.innerHTML = errHtml('invalid echarts option'); return noop }
+      var themed = option
+      if (theme && theme.id !== 'auto') {
+        themed = Object.assign({}, option, {
+          backgroundColor: theme.background,
+          color: theme.palette,
+          textStyle: { color: theme.text },
+        })
+      }
       var chart = echarts.init(el)
-      chart.setOption(option)
+      chart.setOption(themed)
       var ro = new ResizeObserver(function () { chart.resize() })
       ro.observe(el)
       return function () { ro.disconnect(); chart.dispose() }
     }
 
-    function renderMermaid(el, mermaid, code) {
+    function renderMermaid(el, mermaid, code, theme) {
       if (typeof code !== 'string' || code.trim() === '') { el.innerHTML = errHtml('empty mermaid code'); return noop }
-      try { mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' }) } catch (e) { /* ignore */ }
+      var mmdTheme = theme && theme.dark ? 'dark' : 'default'
+      try { mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: mmdTheme }) } catch (e) { /* ignore */ }
       var id = 'dsh-mm-' + Math.random().toString(36).slice(2, 10)
       var cancelled = false
       mermaid.render(id, code).then(function (r) {
@@ -120,7 +149,7 @@ window.__ModuleLoader__.load({
       return function () { cancelled = true; el.innerHTML = '' }
     }
 
-    function renderThree(el, THREE, spec) {
+    function renderThree(el, THREE, spec, theme) {
       var w = el.clientWidth || 400
       var h = el.clientHeight || 300
       var renderer = null
@@ -143,7 +172,8 @@ window.__ModuleLoader__.load({
         el.appendChild(renderer.domElement)
 
         scene = new THREE.Scene()
-        scene.background = new THREE.Color(validColor(spec && spec.background) || 0x16213a)
+        var bg = theme && theme.background ? theme.background : (validColor(spec && spec.background) || 0x16213a)
+        scene.background = new THREE.Color(bg)
 
         camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 200)
 
@@ -175,7 +205,8 @@ window.__ModuleLoader__.load({
           var m = meshes[i] || {}
           var shape = SHAPES[m.shape] ? m.shape : 'box'
           var size = typeof m.size === 'number' && m.size > 0 ? m.size : 1
-          var mesh = new THREE.Mesh(SHAPES[shape](size), materialFor(validColor(m.color)))
+          var meshColor = (theme && theme.id !== 'auto') ? theme.palette[i % theme.palette.length] : validColor(m.color)
+          var mesh = new THREE.Mesh(SHAPES[shape](size), materialFor(meshColor))
           var pos = num3(m.position, [0, 0, 0])
           var rot = num3(m.rotation, [0, 0, 0])
           mesh.position.set(pos[0], pos[1], pos[2])
@@ -282,10 +313,47 @@ window.__ModuleLoader__.load({
       return React.createElement('div', { 'data-artifact-tool': true, style: { color: 'var(--dsh-muted, #888)', padding: '8px 0', fontFamily: 'monospace', fontSize: '12px' } }, title)
     }
 
+    function ThemeBar(props) {
+      return React.createElement(
+        'div',
+        { style: { display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' } },
+        props.themes.map(function (t) {
+          var active = t.id === props.active
+          return React.createElement(
+            'button',
+            {
+              key: t.id,
+              type: 'button',
+              title: t.label,
+              onClick: function () { props.onSelect(t.id) },
+              style: {
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '3px 9px', borderRadius: 999, cursor: 'pointer',
+                fontSize: 12, lineHeight: '18px',
+                border: active ? '1px solid #4d6bfe' : '1px solid var(--dsh-border, rgba(0,0,0,0.14))',
+                background: active ? 'rgba(77,107,254,0.08)' : 'transparent',
+                color: active ? '#4d6bfe' : 'var(--dsh-muted, #666)',
+              },
+            },
+            React.createElement('span', { style: { width: 12, height: 12, borderRadius: '50%', background: t.swatch } }),
+            t.label,
+          )
+        }),
+      )
+    }
+
     function ArtifactToolView(props) {
       var block = props.block
       var meta = block && 'meta' in block ? block.meta : undefined
       var containerRef = React.useRef(null)
+      var themeState = React.useState(meta && typeof meta.theme === 'string' ? themeById(meta.theme) : THEMES[0])
+      var theme = themeState[0]
+      var setTheme = themeState[1]
+
+      // Reset the theme when a new result arrives (user selection is per-chart).
+      React.useEffect(function () {
+        setTheme(meta && typeof meta.theme === 'string' ? themeById(meta.theme) : THEMES[0])
+      }, [meta])
 
       React.useEffect(function () {
         var el = containerRef.current
@@ -300,9 +368,9 @@ window.__ModuleLoader__.load({
 
         promise.then(function (api) {
           if (cancelled || !el) return
-          if (engine === 'mermaid') dispose = renderMermaid(el, api, meta.payload)
-          else if (engine === 'three') dispose = renderThree(el, api, meta.payload)
-          else dispose = renderEcharts(el, api, meta.payload)
+          if (engine === 'mermaid') dispose = renderMermaid(el, api, meta.payload, theme)
+          else if (engine === 'three') dispose = renderThree(el, api, meta.payload, theme)
+          else dispose = renderEcharts(el, api, meta.payload, theme)
         }).catch(function (err) {
           if (!cancelled) el.innerHTML = errHtml('engine load failed: ' + (err && err.message ? err.message : err))
         })
@@ -311,7 +379,7 @@ window.__ModuleLoader__.load({
           cancelled = true
           dispose()
         }
-      }, [meta, block && block.callId])
+      }, [meta, theme, block && block.callId])
 
       if (!meta || !meta.payload) return toolFallback(TOOL_NAME)
       var height = typeof meta.height === 'number' && meta.height >= 120 ? meta.height : 360
@@ -319,6 +387,7 @@ window.__ModuleLoader__.load({
         'div',
         { 'data-artifact-tool': true },
         meta.title ? React.createElement('div', { style: { fontWeight: 600, marginBottom: 8, fontSize: 14 } }, meta.title) : null,
+        React.createElement(ThemeBar, { themes: THEMES, active: theme.id, onSelect: function (id) { setTheme(themeById(id)) } }),
         React.createElement('div', { ref: containerRef, style: { width: '100%', height: height + 'px', minHeight: '200px' } }),
       )
     }
