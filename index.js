@@ -29,23 +29,71 @@ const SPEC_MAX_BYTES = 100_000
 const HTML_MAX_BYTES = 1_000_000
 
 export const name = PKG
-export const inject = ['systemPrompt', 'tools']
+export const inject = ['systemPrompt', 'tools', 'skills']
 
-const SYSTEM_PROMPT_TEXT = `You can render rich interactive content INLINE in the conversation with two tools: ${TOOL_NAME} (charts / diagrams / 3D scenes) and ${HTML_TOOL_NAME} (custom HTML widgets). Use them whenever structured or visual output beats prose.
+// Short, trigger-focused system-prompt section. Detailed payload formats and
+// examples live in the bundled skill (progressive disclosure), keeping the
+// always-on context lean.
+const SYSTEM_PROMPT_TEXT = `You can render rich interactive content INLINE in the conversation with two tools: ${TOOL_NAME} (charts / diagrams / 3D scenes) and ${HTML_TOOL_NAME} (sandboxed custom HTML widgets).
 
-## ${TOOL_NAME}
+TRIGGER (must follow): whenever the user asks for ANY chart, plot, diagram, visualization, 3D scene, or interactive widget — e.g. "画一张柱状图/折线图/饼图", "做个流程图", "画个3D场景", "做一个交互组件" — you MUST call ${TOOL_NAME} (or ${HTML_TOOL_NAME} for arbitrary custom HTML), even when the user does not name the tool. Do not answer with prose or a Markdown table when a chart / diagram / 3D / widget is the better representation. The "dsh-artifact" skill carries the detailed payload formats and examples.`
 
-Render a chart, diagram, or 3D scene as an interactive card. Pick the \`engine\` and fill the matching field:
+// Bundled skill: progressive disclosure of the detailed payload formats, so the
+// always-on system-prompt stays short while the model can load full guidance
+// on demand when a user's intent matches.
+const SKILL_NAME = 'dsh-artifact'
+const SKILL_DESCRIPTION = '用 render_artifact 渲染图表/流程图/3D 场景，用 render_html 渲染沙箱化自定义 HTML 组件。'
+const SKILL_WHEN_TO_USE = '当用户要求任何图表、绘图、可视化、流程图、3D 场景或交互组件（如「画一张柱状图/折线图/饼图」「做个流程图」「画个3D」「做一个计数器」），即使没有点名工具，也要主动调用 render_artifact 或 render_html，而不是用文字或 Markdown 表格回答。'
+const SKILL_CONTENT = `# dsh-artifact 渲染指南
 
-- \`engine: "echarts"\` → pass \`option\` (a plain-JSON ECharts option; NO functions — use string templates like '{c}%' for formatters). Every ECharts chart type works: bar, line, pie, scatter, heatmap, radar, gauge, funnel, sankey, graph, map, candlestick, and more.
-- \`engine: "mermaid"\` → pass \`code\` (Mermaid diagram source: flowchart, sequenceDiagram, classDiagram, gantt, stateDiagram, pie, erDiagram, journey). Diagrams only — no arbitrary text.
-- \`engine: "three"\` → pass \`spec\` (a declarative 3D scene: {"meshes":[{"shape":"box|sphere|cone|cylinder|torus","color":"#hex","size":n,"position":[x,y,z],"rotation":[rx,ry,rz]}],"background":"#hex","ambient":n}). For simple geometric 3D previews.
+当用户想要图表、流程图、3D 场景或自定义交互组件时，用下面的工具渲染，不要用文字或 Markdown 表格代替。
 
-Rules: one artifact per call; payloads must be pure JSON (mermaid \`code\` is a plain string); the \`option\`/\`spec\` must be JSON objects, never serialized strings.
+## render_artifact（图表 / 流程图 / 3D）
 
-## ${HTML_TOOL_NAME}
+按 \`engine\` 选择引擎并填入对应字段：
 
-Render arbitrary custom HTML/CSS/JS as a sandboxed inline widget. Pass \`html\` — a self-contained HTML fragment or full document. The widget runs in a sandboxed iframe (no network, no top navigation, no form submission; inline scripts and styles are allowed). Use it for custom interactive widgets, UI mockups, or rich layouts the declarative engines cannot express. Keep it self-contained: no external resources.`
+### echarts（图表，最常用）
+\`{"engine":"echarts","option":{...}}\`
+- \`option\` 是纯 JSON 的 ECharts 配置，**禁止函数**（formatter 用字符串模板，如 "{c}%"）。
+- 支持全部图表类型：bar / line / pie / scatter / heatmap / radar / gauge / funnel / sankey / graph / map / boxplot / sunburst 等。
+- 示例（季度收入柱状图）：
+\`\`\`json
+{"engine":"echarts","title":"季度收入","option":{"title":{"text":"季度收入（万元）"},"xAxis":{"type":"category","data":["Q1","Q2","Q3","Q4"]},"yAxis":{"type":"value"},"series":[{"type":"bar","data":[120,180,150,210]}]}}
+\`\`\`
+
+### mermaid（流程图 / 图）
+\`{"engine":"mermaid","code":"flowchart TD; A-->B;"}\`
+- \`code\` 是 Mermaid 图源码：flowchart / sequenceDiagram / classDiagram / gantt / stateDiagram / pie / erDiagram / journey。
+
+### three（3D 场景）
+\`{"engine":"three","spec":{"meshes":[{"shape":"box","color":"#4d6bfe","size":1}],"background":"#16213a"}}\`
+- \`shape\` 白名单：box / sphere / cone / cylinder / torus。
+
+## 主题（可选 \`theme\` 参数）
+
+为图表 / 3D 快速套用配色主题（用户也能在卡片上方的主题条里点击切换，无需重新生成）：
+
+- \`auto\`（默认，保留 payload 自带颜色）
+- \`tech-blue\` 科技蓝（深蓝底 + 蓝青系）
+- \`minimal\` 极简白（浅色底 + 蓝灰系）
+- \`night-purple\` 暗夜紫（深紫底 + 紫罗兰系）
+- \`forest\` 墨绿（深绿底 + 翡翠系）
+- \`amber\` 暖橙（暖深底 + 琥珀系）
+
+当用户说「换成暗夜紫主题」「用深色科技蓝背景」时，在 render_artifact 调用里加 \`"theme":"night-purple"\`（或对应 id），并保持原有 \`option\` / \`spec\` 不变。
+
+## render_html（自定义交互组件）
+
+当声明式引擎表达不了时，渲染任意 HTML/CSS/JS：
+\`{"html":"<button onclick=\\"this.textContent='clicked'\\">click</button>"}\`
+- \`html\` 是自包含的 HTML 片段或完整文档；运行在沙箱 iframe 中（无网络、无顶层导航、无表单提交）。
+
+## 规则
+
+- 一次调用一个产物；payload 必须是纯 JSON（mermaid code 是普通字符串）。
+- \`option\` / \`spec\` 必须是 JSON 对象，不要传序列化字符串。
+- 结构化数据用图表、流程用 mermaid、几何预览用 three、自定义交互用 render_html。
+- 拿不准就选 echarts。`
 
 /** Serve one flat .js asset from the plugin's own assets/ directory. */
 async function serveAsset(req, res) {
@@ -72,7 +120,7 @@ async function serveAsset(req, res) {
     const body = await readFile(fileURLToPath(new URL(`./assets/${rel}`, import.meta.url)))
     res.writeHead(200, {
       'content-type': 'text/javascript; charset=utf-8',
-      'cache-control': 'no-cache',
+      'cache-control': 'public, max-age=31536000, immutable',
     })
     res.end(body)
   } catch {
@@ -176,7 +224,7 @@ function resolveMeta(args) {
   else payload = normalizeObjectPayload(a.option)
   // Defensive: never let non-JSON values (e.g. BigInt) into the persisted meta.
   if (payload !== undefined && !isJsonSafe(payload, 0)) payload = undefined
-  return { engine, payload, title, height }
+  return { engine, payload, title, height, theme: typeof a.theme === 'string' ? a.theme : undefined }
 }
 
 /** Validate an ECharts option; returns a message on failure, else null. */
@@ -241,11 +289,12 @@ function createRenderArtifactTool() {
     name: TOOL_NAME,
     description:
       'Render a chart, diagram, or 3D scene inline in the conversation as an interactive card. '
+      + 'TRIGGER: use whenever the user asks for any chart / plot / diagram / visualization / 3D preview (画图 / 图表 / 可视化 / 流程图 / 3D / 组件), even without naming this tool. '
       + 'Pick an engine and pass the matching field: '
       + 'engine="echarts" with `option` (plain-JSON ECharts option, no functions — use string templates like "{c}%" for formatters; every ECharts chart type works); '
       + 'engine="mermaid" with `code` (Mermaid diagram source: flowchart/sequenceDiagram/classDiagram/gantt/stateDiagram/pie/erDiagram/journey); '
       + 'engine="three" with `spec` (declarative 3D scene: {"meshes":[{"shape":"box|sphere|cone|cylinder|torus","color":"#hex","size":n,"position":[x,y,z],"rotation":[rx,ry,rz]}],"background":"#hex","ambient":n}). '
-      + 'Use whenever structured data reads better as a chart, diagram, or 3D preview than as prose.',
+      + 'Do not answer with prose or a Markdown table when a chart / diagram / 3D preview is the better representation.',
     parameters: {
       type: 'object',
       properties: {
@@ -271,6 +320,10 @@ function createRenderArtifactTool() {
             { type: 'string', description: 'The three.js scene spec serialized as a JSON string.' },
           ],
           description: 'Declarative 3D scene (engine=three): {"meshes":[{shape,color,size,position,rotation}],"background","ambient"}.',
+        },
+        theme: {
+          type: 'string',
+          description: 'Optional color theme: auto (默认) / tech-blue (科技蓝) / minimal (极简白) / night-purple (暗夜紫) / forest (墨绿) / amber (暖橙). Overrides background + series palette + text color.',
         },
         title: { type: 'string', description: 'Optional card title.' },
         height: { type: 'number', description: 'Optional height in px (default 360, min 120).' },
@@ -326,8 +379,9 @@ function createRenderHtmlTool() {
     name: HTML_TOOL_NAME,
     description:
       'Render arbitrary custom HTML/CSS/JS as a sandboxed inline widget in the conversation. '
+      + 'TRIGGER: use whenever the user asks for a custom interactive widget / UI mockup / calculator (交互组件 / 自定义组件 / 小工具) that the declarative engines cannot express. '
       + 'Pass `html` — a self-contained HTML fragment or full document. The widget runs in a sandboxed iframe: no network, no top navigation, no form submission; inline scripts and styles are allowed. '
-      + 'Use it for custom interactive widgets, UI mockups, or rich layouts the declarative engines cannot express. Keep it self-contained (no external resources).',
+      + 'Keep it self-contained (no external resources).',
     parameters: {
       type: 'object',
       properties: {
@@ -371,9 +425,20 @@ export function apply(ctx, config = {}) {
     text: SYSTEM_PROMPT_TEXT,
   })
   try {
+    ctx.skills.register({
+      name: SKILL_NAME,
+      description: SKILL_DESCRIPTION,
+      whenToUse: SKILL_WHEN_TO_USE,
+      source: 'bundled',
+      content: SKILL_CONTENT,
+    })
+  } catch (error) {
+    console.error(`[${PKG}] skill registration failed:`, error?.message ?? error)
+  }
+  try {
     ctx.tools.register(createRenderArtifactTool())
     ctx.tools.register(createRenderHtmlTool())
-    console.log(`[${PKG}] registered ${TOOL_NAME} + ${HTML_TOOL_NAME} tools + system-prompt section`)
+    console.log(`[${PKG}] registered ${TOOL_NAME} + ${HTML_TOOL_NAME} tools + skill + system-prompt section`)
   } catch (error) {
     console.error(`[${PKG}] tool registration failed:`, error?.message ?? error)
   }
