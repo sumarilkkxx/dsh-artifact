@@ -56,16 +56,18 @@ window.__ModuleLoader__.load({
       return pending[file]
     }
 
-    // Low-priority background prefetch of the most common engine, so the first
-    // chart appears instantly: the download overlaps the model's thinking time.
-    // Mermaid (3.5 MB, low frequency) and three stay lazy-loaded on demand.
+    // Low-priority background prefetch of the most common engines, so the first
+    // chart/3D appears instantly: the download overlaps the model's thinking.
+    // Mermaid (3.5 MB, low frequency) stays lazy-loaded on demand.
     function prefetchAssets() {
       if (typeof document === 'undefined') return
-      var link = document.createElement('link')
-      link.rel = 'prefetch'
-      link.as = 'script'
-      link.href = assetUrl('echarts.min.js')
-      document.head.appendChild(link)
+      ;['echarts.min.js', 'three.min.js'].forEach(function (file) {
+        var link = document.createElement('link')
+        link.rel = 'prefetch'
+        link.as = 'script'
+        link.href = assetUrl(file)
+        document.head.appendChild(link)
+      })
     }
 
     // ---------- helpers ----------
@@ -123,38 +125,57 @@ window.__ModuleLoader__.load({
       var h = el.clientHeight || 300
       var renderer = null
       var scene, camera, group
+      var materials = {}
+      var center = new THREE.Vector3(0, 0, 0)
+      var radius = 1
+      var dist = 3
+      var theta = 0.7
+      var phi = 1.0
+      var dragging = false
+      var lastX = 0
+      var lastY = 0
+
       try {
         renderer = new THREE.WebGLRenderer({ antialias: true })
+        // Cap at 2x for sharpness on high-DPI without over-spending the GPU.
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
         renderer.setSize(w, h)
         el.appendChild(renderer.domElement)
 
         scene = new THREE.Scene()
         scene.background = new THREE.Color(validColor(spec && spec.background) || 0x16213a)
 
-        camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 100)
-        camera.position.set(3, 3, 6)
-        camera.lookAt(0, 0, 0)
+        camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 200)
 
         scene.add(new THREE.AmbientLight(0xffffff, typeof spec.ambient === 'number' ? spec.ambient : 0.7))
-        var dir = new THREE.DirectionalLight(0xffffff, 0.9)
-        dir.position.set(5, 10, 7)
-        scene.add(dir)
+        var dirLight = new THREE.DirectionalLight(0xffffff, 0.9)
+        dirLight.position.set(5, 10, 7)
+        scene.add(dirLight)
+
+        // Share one material per color so an N-particle scene compiles ~one
+        // shader per color instead of one per mesh.
+        function materialFor(color) {
+          var c = color || 0x4d6bfe
+          if (!materials[c]) materials[c] = new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.1 })
+          return materials[c]
+        }
 
         group = new THREE.Group()
+        // Reduced segment counts: small primitives look identical with far
+        // fewer triangles.
         var SHAPES = {
           box: function (s) { return new THREE.BoxGeometry(s, s, s) },
-          sphere: function (s) { return new THREE.SphereGeometry(s / 2, 32, 16) },
-          cone: function (s) { return new THREE.ConeGeometry(s / 2, s, 24) },
-          cylinder: function (s) { return new THREE.CylinderGeometry(s / 2, s / 2, s, 24) },
-          torus: function (s) { return new THREE.TorusGeometry(s / 2, s / 6, 16, 48) },
+          sphere: function (s) { return new THREE.SphereGeometry(s / 2, 16, 8) },
+          cone: function (s) { return new THREE.ConeGeometry(s / 2, s, 16) },
+          cylinder: function (s) { return new THREE.CylinderGeometry(s / 2, s / 2, s, 16) },
+          torus: function (s) { return new THREE.TorusGeometry(s / 2, s / 6, 12, 32) },
         }
         var meshes = spec && Array.isArray(spec.meshes) ? spec.meshes : []
         for (var i = 0; i < meshes.length; i++) {
           var m = meshes[i] || {}
           var shape = SHAPES[m.shape] ? m.shape : 'box'
           var size = typeof m.size === 'number' && m.size > 0 ? m.size : 1
-          var mat = new THREE.MeshStandardMaterial({ color: validColor(m.color) || 0x4d6bfe, roughness: 0.5, metalness: 0.1 })
-          var mesh = new THREE.Mesh(SHAPES[shape](size), mat)
+          var mesh = new THREE.Mesh(SHAPES[shape](size), materialFor(validColor(m.color)))
           var pos = num3(m.position, [0, 0, 0])
           var rot = num3(m.rotation, [0, 0, 0])
           mesh.position.set(pos[0], pos[1], pos[2])
@@ -162,10 +183,50 @@ window.__ModuleLoader__.load({
           group.add(mesh)
         }
         scene.add(group)
+
+        // Auto-frame: fit the camera to the mesh bounding sphere so scattered
+        // scenes are centered and never clipped.
+        var sphere = new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere())
+        center.copy(sphere.center)
+        radius = Math.max(sphere.radius, 0.5)
+        dist = Math.max(radius * 3, 3)
       } catch (e) {
         el.innerHTML = errHtml('three render failed: ' + (e && e.message ? e.message : e))
         return function () { if (renderer) renderer.dispose() }
       }
+
+      function updateCamera() {
+        camera.position.set(
+          center.x + dist * Math.sin(phi) * Math.sin(theta),
+          center.y + dist * Math.cos(phi),
+          center.z + dist * Math.sin(phi) * Math.cos(theta),
+        )
+        camera.lookAt(center)
+      }
+      updateCamera()
+
+      // Manual orbit: drag to rotate, wheel to zoom.
+      function onMouseDown(e) { dragging = true; lastX = e.clientX; lastY = e.clientY }
+      function onMouseMove(e) {
+        if (!dragging) return
+        var dx = e.clientX - lastX
+        var dy = e.clientY - lastY
+        lastX = e.clientX
+        lastY = e.clientY
+        theta -= dx * 0.005
+        phi -= dy * 0.005
+        phi = Math.max(0.2, Math.min(Math.PI - 0.2, phi))
+      }
+      function onMouseUp() { dragging = false }
+      function onWheel(e) {
+        e.preventDefault()
+        dist *= (e.deltaY > 0 ? 1.1 : 0.9)
+        dist = Math.max(radius * 0.6, Math.min(radius * 8, dist))
+      }
+      renderer.domElement.addEventListener('mousedown', onMouseDown)
+      window.addEventListener('mousemove', onMouseMove)
+      window.addEventListener('mouseup', onMouseUp)
+      renderer.domElement.addEventListener('wheel', onWheel, { passive: false })
 
       var running = true
       var raf
@@ -180,7 +241,8 @@ window.__ModuleLoader__.load({
       function animate() {
         if (!running) return
         raf = requestAnimationFrame(animate)
-        group.rotation.y += 0.005
+        if (!dragging) theta += 0.004 // slow auto-orbit when not interacting
+        updateCamera()
         renderer.render(scene, camera)
       }
       animate()
@@ -188,6 +250,11 @@ window.__ModuleLoader__.load({
         running = false
         if (raf) cancelAnimationFrame(raf)
         ro.disconnect()
+        renderer.domElement.removeEventListener('mousedown', onMouseDown)
+        window.removeEventListener('mousemove', onMouseMove)
+        window.removeEventListener('mouseup', onMouseUp)
+        renderer.domElement.removeEventListener('wheel', onWheel)
+        for (var k in materials) materials[k].dispose()
         renderer.dispose()
       }
     }
