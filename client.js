@@ -56,6 +56,18 @@ window.__ModuleLoader__.load({
       return pending[file]
     }
 
+    // Low-priority background prefetch of the most common engine, so the first
+    // chart appears instantly: the download overlaps the model's thinking time.
+    // Mermaid (3.5 MB, low frequency) and three stay lazy-loaded on demand.
+    function prefetchAssets() {
+      if (typeof document === 'undefined') return
+      var link = document.createElement('link')
+      link.rel = 'prefetch'
+      link.as = 'script'
+      link.href = assetUrl('echarts.min.js')
+      document.head.appendChild(link)
+    }
+
     // ---------- helpers ----------
 
     function escapeHtml(s) {
@@ -264,6 +276,7 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      prefetchAssets()
       ctx.slots.inject('tool.call.toolview', function () {
         return ctx.slots.register({ name: 'tool.call.toolview', key: TOOL_NAME }, ArtifactToolView)
       })
