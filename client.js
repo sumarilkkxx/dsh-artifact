@@ -285,6 +285,9 @@ window.__ModuleLoader__.load({
         window.removeEventListener('mousemove', onMouseMove)
         window.removeEventListener('mouseup', onMouseUp)
         renderer.domElement.removeEventListener('wheel', onWheel)
+        if (renderer.domElement && renderer.domElement.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement)
+        }
         for (var k in materials) materials[k].dispose()
         renderer.dispose()
       }
@@ -325,7 +328,13 @@ window.__ModuleLoader__.load({
               key: t.id,
               type: 'button',
               title: t.label,
-              onClick: function () { props.onSelect(t.id) },
+              onClick: function (e) {
+                // Don't let the click bubble to the tool card's own handlers
+                // (which open the trajectory/inspect view).
+                if (e && e.stopPropagation) e.stopPropagation()
+                if (e && e.preventDefault) e.preventDefault()
+                props.onSelect(t.id)
+              },
               style: {
                 display: 'inline-flex', alignItems: 'center', gap: 5,
                 padding: '3px 9px', borderRadius: 999, cursor: 'pointer',
