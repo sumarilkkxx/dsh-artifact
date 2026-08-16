@@ -94,36 +94,87 @@ window.__ModuleLoader__.load({
 
     // ---------- themes ----------
 
-    // Tasteful, professional palettes inspired by ECharts / Chart.js / AntV
-    // default dark & light themes. `auto` keeps the payload's own colors;
-    // every other theme overrides background + series/mesh palette + text
-    // color for a cohesive look.
+    // ECharts 5 palettes and official theme palettes, each tuned against the
+    // official light/default and dark surface tokens below.
     var THEMES = [
-      { id: 'auto', label: '默认', swatch: 'linear-gradient(135deg,#cbd5e1,#64748b)', background: null, palette: null, text: null, dark: false },
-      { id: 'tech-blue', label: '科技蓝', swatch: 'linear-gradient(135deg,#0f172a,#3b82f6)', background: '#0f172a', palette: ['#3b82f6', '#38bdf8', '#818cf8', '#22d3ee', '#60a5fa', '#a78bfa'], text: '#e2e8f0', dark: true },
-      { id: 'minimal', label: '极简白', swatch: 'linear-gradient(135deg,#f8fafc,#0ea5e9)', background: '#f8fafc', palette: ['#0ea5e9', '#475569', '#64748b', '#38bdf8', '#94a3b8', '#1e293b'], text: '#1e293b', dark: false },
-      { id: 'night-purple', label: '暗夜紫', swatch: 'linear-gradient(135deg,#1a1333,#8b5cf6)', background: '#1a1333', palette: ['#8b5cf6', '#a78bfa', '#c4b5fd', '#6d28d9', '#f472b6', '#60a5fa'], text: '#ede9fe', dark: true },
-      { id: 'forest', label: '墨绿', swatch: 'linear-gradient(135deg,#0f1f1a,#34d399)', background: '#0f1f1a', palette: ['#34d399', '#2dd4bf', '#10b981', '#4ade80', '#a3e635', '#14b8a6'], text: '#ecfdf5', dark: true },
-      { id: 'amber', label: '暖橙', swatch: 'linear-gradient(135deg,#1c1917,#f59e0b)', background: '#1c1917', palette: ['#f59e0b', '#fb923c', '#fbbf24', '#f97316', '#fca5a5', '#fcd34d'], text: '#fef3c7', dark: true },
+      { id: 'auto', label: '默认', swatch: 'linear-gradient(135deg,#cbd5e1,#64748b)', palette: null },
+      { id: 'tech-blue', label: 'ECharts 5', swatch: 'linear-gradient(135deg,#5470c6 0 20%,#91cc75 20% 40%,#fac858 40% 60%,#ee6666 60% 80%,#73c0de 80%)', light: ['#5470C6', '#91CC75', '#FAC858', '#EE6666', '#73C0DE', '#3BA272', '#FC8452', '#9A60B4', '#EA7CCC'], dark: ['#4992FF', '#7CFFB2', '#FDDD60', '#FF6E76', '#58D9F9', '#05C091', '#FF8A45', '#8D48E3', '#DD79FF'] },
+      { id: 'minimal', label: 'Vintage', swatch: 'linear-gradient(135deg,#d87c7c 0 25%,#919e8b 25% 50%,#d7ab82 50% 75%,#61a0a8 75%)', light: ['#D87C7C', '#919E8B', '#D7AB82', '#6E7074', '#61A0A8', '#EFA18D', '#787464', '#CC7E63', '#724E58', '#4B565B'], dark: ['#F29B9B', '#B8C7AE', '#E8C49A', '#B9B8CE', '#7FC4CC', '#FFB69F', '#AAA795', '#F0A080', '#BE7486', '#7F9AA0'] },
+      { id: 'night-purple', label: 'Macarons', swatch: 'linear-gradient(135deg,#2ec7c9 0 25%,#b6a2de 25% 50%,#5ab1ef 50% 75%,#ffb980 75%)', light: ['#2EC7C9', '#B6A2DE', '#5AB1EF', '#FFB980', '#D87A80', '#8D98B3', '#E5CF0D', '#97B552', '#DC69AA'], dark: ['#55D6D8', '#C9B7F4', '#7CC4FF', '#FFD0A5', '#F09AA0', '#AAB5CC', '#F5E55E', '#B5D17A', '#F08BC0'] },
+      { id: 'forest', label: 'Shine', swatch: 'linear-gradient(135deg,#c12e34 0 25%,#e6b600 25% 50%,#0098d9 50% 75%,#2b821d 75%)', light: ['#C12E34', '#E6B600', '#0098D9', '#2B821D', '#005EAA', '#339CA8', '#CDA819', '#32A487'], dark: ['#FF7479', '#FDDD60', '#58D9F9', '#7CFFB2', '#4992FF', '#55C4D1', '#F5D05A', '#66C7A9'] },
+      { id: 'amber', label: 'Roma', swatch: 'linear-gradient(135deg,#e01f54 0 25%,#001852 25% 50%,#b8d2c7 50% 75%,#d3758f 75%)', light: ['#E01F54', '#001852', '#B8D2C7', '#C6B38E', '#A4D8C2', '#F3D999', '#D3758F', '#2E4783', '#82B6E9'], dark: ['#FF6B95', '#7FA8FF', '#BEE6D7', '#E3CCA0', '#A4E6CB', '#F5D96B', '#F0A3B5', '#8FAEFF', '#8ED0FF'] },
     ]
+
+    var MODES = [
+      { id: 'auto', label: '跟随系统' },
+      { id: 'light', label: '浅色' },
+      { id: 'dark', label: '深色' },
+    ]
+    var SURFACES = {
+      // ECharts 5 default component colors.
+      light: { background: '#FFFFFF', panel: '#FFFFFF', text: '#464646', title: '#464646', muted: '#6E7079', border: '#D9DDE5', axis: '#6E7079', grid: '#E0E6F1', minorGrid: '#F3F5F8', tooltip: '#FFFFFF', tooltipBorder: '#D9DDE5', pointer: '#6E7079', selected: 'rgba(84,112,198,0.10)' },
+      // The host app's dark canvas is rgb(4, 8, 16). Keep ECharts dark's
+      // text/grid tokens, but use a nearby blue-black panel for readable UI.
+      dark: { background: '#040810', panel: '#0B1220', text: '#B9B8CE', title: '#EEF1FA', muted: '#B9B8CE', border: '#484753', axis: '#B9B8CE', grid: '#484753', minorGrid: '#20203B', tooltip: '#0B1220', tooltipBorder: '#484753', pointer: '#817F91', selected: 'rgba(73,146,255,0.16)' },
+    }
 
     function themeById(id) {
       for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) return THEMES[i]
       return THEMES[0]
     }
+    function modeById(id) {
+      for (var i = 0; i < MODES.length; i++) if (MODES[i].id === id) return MODES[i]
+      return MODES[0]
+    }
+    function resolvedMode(mode) {
+      if (mode && mode.id === 'dark') return 'dark'
+      if (mode && mode.id === 'light') return 'light'
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
+    function surfaceFor(mode) {
+      return SURFACES[resolvedMode(mode)]
+    }
+    function paletteFor(theme, mode) {
+      if (!theme || theme.id === 'auto') return null
+      return resolvedMode(mode) === 'dark' ? theme.dark : theme.light
+    }
+    function themedAxis(axis, surface) {
+      if (!axis) return axis
+      if (Array.isArray(axis)) return axis.map(function (item) { return themedAxis(item, surface) })
+      return Object.assign({}, axis, {
+        axisLine: Object.assign({}, axis.axisLine, { lineStyle: Object.assign({}, axis.axisLine && axis.axisLine.lineStyle, { color: surface.axis }) }),
+        axisLabel: Object.assign({}, axis.axisLabel, { color: surface.muted }),
+        nameTextStyle: Object.assign({}, axis.nameTextStyle, { color: surface.muted }),
+        splitLine: Object.assign({}, axis.splitLine, { lineStyle: Object.assign({}, axis.splitLine && axis.splitLine.lineStyle, { color: surface.grid }) }),
+        minorSplitLine: Object.assign({}, axis.minorSplitLine, { lineStyle: Object.assign({}, axis.minorSplitLine && axis.minorSplitLine.lineStyle, { color: surface.minorGrid }) }),
+        splitArea: Object.assign({}, axis.splitArea, { areaStyle: Object.assign({}, axis.splitArea && axis.splitArea.areaStyle, { color: [surface.background, surface.panel] }) }),
+      })
+    }
 
     // ---------- engine renderers (each returns a disposer) ----------
 
-    function renderEcharts(el, echarts, option, theme) {
+    function renderEcharts(el, echarts, option, theme, mode) {
       if (!option || typeof option !== 'object') { el.innerHTML = errHtml('invalid echarts option'); return noop }
-      var themed = option
-      if (theme && theme.id !== 'auto') {
-        themed = Object.assign({}, option, {
-          backgroundColor: theme.background,
-          color: theme.palette,
-          textStyle: { color: theme.text },
-        })
-      }
+      var surface = surfaceFor(mode)
+      var palette = paletteFor(theme, mode)
+      var themed = Object.assign({}, option, {
+        backgroundColor: surface.background,
+        color: palette || option.color,
+        textStyle: Object.assign({}, option.textStyle, { color: surface.text }),
+        title: option.title ? Object.assign({}, option.title, { textStyle: Object.assign({}, option.title.textStyle, { color: surface.title }), subtextStyle: Object.assign({}, option.title.subtextStyle, { color: surface.muted }) }) : option.title,
+        legend: option.legend ? Object.assign({}, option.legend, { textStyle: Object.assign({}, option.legend.textStyle, { color: surface.muted }) }) : option.legend,
+        tooltip: Object.assign({}, option.tooltip, { backgroundColor: surface.tooltip, borderColor: surface.tooltipBorder, textStyle: Object.assign({}, option.tooltip && option.tooltip.textStyle, { color: surface.text }) }),
+        axisPointer: Object.assign({}, option.axisPointer, {
+          lineStyle: Object.assign({}, option.axisPointer && option.axisPointer.lineStyle, { color: surface.pointer }),
+          crossStyle: Object.assign({}, option.axisPointer && option.axisPointer.crossStyle, { color: surface.pointer }),
+          label: Object.assign({}, option.axisPointer && option.axisPointer.label, { color: '#FFFFFF', backgroundColor: surface.pointer }),
+        }),
+        xAxis: themedAxis(option.xAxis, surface),
+        yAxis: themedAxis(option.yAxis, surface),
+        visualMap: option.visualMap ? Object.assign({}, option.visualMap, { textStyle: Object.assign({}, option.visualMap.textStyle, { color: surface.muted }) }) : option.visualMap,
+        timeline: option.timeline ? Object.assign({}, option.timeline, { lineStyle: Object.assign({}, option.timeline.lineStyle, { color: surface.axis }), label: Object.assign({}, option.timeline.label, { color: surface.muted }) }) : option.timeline,
+        toolbox: option.toolbox ? Object.assign({}, option.toolbox, { iconStyle: Object.assign({}, option.toolbox.iconStyle, { borderColor: surface.muted }) }) : option.toolbox,
+      })
       var chart = echarts.init(el)
       chart.setOption(themed)
       var ro = new ResizeObserver(function () { chart.resize() })
@@ -131,10 +182,24 @@ window.__ModuleLoader__.load({
       return function () { ro.disconnect(); chart.dispose() }
     }
 
-    function renderMermaid(el, mermaid, code, theme) {
+    function renderMermaid(el, mermaid, code, theme, mode) {
       if (typeof code !== 'string' || code.trim() === '') { el.innerHTML = errHtml('empty mermaid code'); return noop }
-      var mmdTheme = theme && theme.dark ? 'dark' : 'default'
-      try { mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: mmdTheme }) } catch (e) { /* ignore */ }
+      var surface = surfaceFor(mode)
+      var palette = paletteFor(theme, mode) || (resolvedMode(mode) === 'dark'
+        ? ['#4992FF', '#7CFFB2', '#FDDD60']
+        : ['#5470C6', '#91CC75', '#FAC858'])
+      try {
+        mermaid.initialize({
+          startOnLoad: false, securityLevel: 'strict', theme: 'base',
+          themeVariables: {
+            background: surface.background, primaryColor: palette[0], primaryTextColor: surface.text,
+            primaryBorderColor: palette[0], secondaryColor: palette[1], tertiaryColor: surface.panel,
+            lineColor: surface.pointer, textColor: surface.text, mainBkg: surface.panel,
+            nodeBorder: surface.border, clusterBkg: surface.panel, clusterBorder: surface.border,
+            noteBkgColor: surface.panel, noteTextColor: surface.text, noteBorderColor: surface.border,
+          },
+        })
+      } catch (e) { /* ignore */ }
       var id = 'dsh-mm-' + Math.random().toString(36).slice(2, 10)
       var cancelled = false
       mermaid.render(id, code).then(function (r) {
@@ -149,7 +214,7 @@ window.__ModuleLoader__.load({
       return function () { cancelled = true; el.innerHTML = '' }
     }
 
-    function renderThree(el, THREE, spec, theme) {
+    function renderThree(el, THREE, spec, theme, mode) {
       var w = el.clientWidth || 400
       var h = el.clientHeight || 300
       var renderer = null
@@ -172,7 +237,8 @@ window.__ModuleLoader__.load({
         el.appendChild(renderer.domElement)
 
         scene = new THREE.Scene()
-        var bg = theme && theme.background ? theme.background : (validColor(spec && spec.background) || 0x16213a)
+        var surface = surfaceFor(mode)
+        var bg = surface.background || (validColor(spec && spec.background) || 0x16213a)
         scene.background = new THREE.Color(bg)
 
         camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 200)
@@ -205,7 +271,8 @@ window.__ModuleLoader__.load({
           var m = meshes[i] || {}
           var shape = SHAPES[m.shape] ? m.shape : 'box'
           var size = typeof m.size === 'number' && m.size > 0 ? m.size : 1
-          var meshColor = (theme && theme.id !== 'auto') ? theme.palette[i % theme.palette.length] : validColor(m.color)
+          var scenePalette = paletteFor(theme, mode)
+          var meshColor = scenePalette ? scenePalette[i % scenePalette.length] : validColor(m.color)
           var mesh = new THREE.Mesh(SHAPES[shape](size), materialFor(meshColor))
           var pos = num3(m.position, [0, 0, 0])
           var rot = num3(m.rotation, [0, 0, 0])
@@ -316,38 +383,88 @@ window.__ModuleLoader__.load({
       return React.createElement('div', { 'data-artifact-tool': true, style: { color: 'var(--dsh-muted, #888)', padding: '8px 0', fontFamily: 'monospace', fontSize: '12px' } }, title)
     }
 
-    function ThemeBar(props) {
+    function PaletteStrip(props) {
+      var palette = paletteFor(props.theme, props.mode) || ['#CBD5E1', '#94A3B8', '#64748B']
+      return React.createElement(
+        'span',
+        { 'aria-hidden': true, style: { display: 'inline-flex', width: 48, height: 8, borderRadius: 99, overflow: 'hidden', flexShrink: 0 } },
+        palette.slice(0, 5).map(function (color, index) {
+          return React.createElement('span', { key: index, style: { flex: 1, background: color } })
+        }),
+      )
+    }
+
+    // A compact, in-canvas menu keeps the chart card quiet until the user
+    // needs styling controls. It is intentionally independent of the canvas
+    // so the same control works for ECharts, Mermaid, and Three.
+    function AppearanceMenu(props) {
+      var openState = React.useState(false)
+      var open = openState[0]
+      var setOpen = openState[1]
+      var menuRef = React.useRef(null)
+      var surface = props.surface
+      var accent = props.palette && props.palette[0] ? props.palette[0] : (resolvedMode(props.mode) === 'dark' ? '#4992FF' : '#5470C6')
+
+      React.useEffect(function () {
+        if (!open || typeof document === 'undefined') return undefined
+        function closeOnOutside(e) {
+          if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false)
+        }
+        document.addEventListener('mousedown', closeOnOutside)
+        return function () { document.removeEventListener('mousedown', closeOnOutside) }
+      }, [open])
+
+      function halt(e) {
+        if (e && e.stopPropagation) e.stopPropagation()
+        if (e && e.preventDefault) e.preventDefault()
+      }
+      function selectTheme(id, e) { halt(e); props.onTheme(id); setOpen(false) }
+      function selectMode(id, e) { halt(e); props.onMode(id) }
+
       return React.createElement(
         'div',
-        { style: { display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' } },
-        props.themes.map(function (t) {
-          var active = t.id === props.active
-          return React.createElement(
-            'button',
-            {
-              key: t.id,
-              type: 'button',
-              title: t.label,
-              onClick: function (e) {
-                // Don't let the click bubble to the tool card's own handlers
-                // (which open the trajectory/inspect view).
-                if (e && e.stopPropagation) e.stopPropagation()
-                if (e && e.preventDefault) e.preventDefault()
-                props.onSelect(t.id)
-              },
-              style: {
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '3px 9px', borderRadius: 999, cursor: 'pointer',
-                fontSize: 12, lineHeight: '18px',
-                border: active ? '1px solid #4d6bfe' : '1px solid var(--dsh-border, rgba(0,0,0,0.14))',
-                background: active ? 'rgba(77,107,254,0.08)' : 'transparent',
-                color: active ? '#4d6bfe' : 'var(--dsh-muted, #666)',
-              },
-            },
-            React.createElement('span', { style: { width: 12, height: 12, borderRadius: '50%', background: t.swatch } }),
-            t.label,
-          )
-        }),
+        {
+          ref: menuRef,
+          onClick: function (e) { if (e && e.stopPropagation) e.stopPropagation() },
+          onKeyDown: function (e) { if (e && e.key === 'Escape') { setOpen(false); if (e.stopPropagation) e.stopPropagation() } },
+          style: { position: 'absolute', top: 12, right: 12, zIndex: 3, fontFamily: 'inherit' },
+        },
+        React.createElement(
+          'button',
+          {
+            type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': open, title: '调整图表外观',
+            onClick: function (e) { halt(e); setOpen(!open) },
+            style: { display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 32, padding: '5px 10px', borderRadius: 7, cursor: 'pointer', border: '1px solid ' + surface.border, background: surface.panel, color: surface.text, boxShadow: open ? '0 6px 18px rgba(0,0,0,0.18)' : '0 1px 3px rgba(0,0,0,0.12)', fontSize: 12, fontWeight: 600 },
+          },
+          React.createElement(PaletteStrip, { theme: props.theme, mode: props.mode }),
+          '外观',
+          React.createElement('span', { 'aria-hidden': true, style: { color: surface.muted, fontSize: 10 } }, open ? '▲' : '▼'),
+        ),
+        open ? React.createElement(
+          'div',
+          { role: 'menu', 'aria-label': '图表外观', style: { position: 'absolute', top: 38, right: 0, width: 224, padding: 8, borderRadius: 9, border: '1px solid ' + surface.border, background: surface.panel, color: surface.text, boxShadow: '0 12px 28px rgba(0,0,0,0.22)' } },
+          React.createElement('div', { style: { padding: '2px 4px 7px', color: surface.muted, fontSize: 11, fontWeight: 600 } }, '显示模式'),
+          React.createElement(
+            'div',
+            { role: 'group', 'aria-label': '显示模式', style: { display: 'flex', gap: 4, marginBottom: 8, padding: 3, borderRadius: 6, background: resolvedMode(props.mode) === 'dark' ? '#0D0A20' : '#F3F5F8' } },
+            props.modes.map(function (item) {
+              var active = item.id === props.mode.id
+              return React.createElement('button', { key: item.id, type: 'button', 'aria-pressed': active, onClick: function (e) { selectMode(item.id, e) }, style: { flex: 1, minHeight: 28, border: 0, borderRadius: 4, cursor: 'pointer', background: active ? surface.panel : 'transparent', color: active ? accent : surface.muted, boxShadow: active ? '0 1px 3px rgba(0,0,0,0.14)' : 'none', fontSize: 11 } }, item.label)
+            }),
+          ),
+          React.createElement('div', { style: { height: 1, background: surface.border, margin: '3px 0 6px' } }),
+          React.createElement('div', { style: { padding: '2px 4px 5px', color: surface.muted, fontSize: 11, fontWeight: 600 } }, '配色主题'),
+          props.themes.map(function (item) {
+            var active = item.id === props.theme.id
+            return React.createElement(
+              'button',
+              { key: item.id, type: 'button', role: 'menuitemradio', 'aria-checked': active, onClick: function (e) { selectTheme(item.id, e) }, style: { display: 'flex', alignItems: 'center', width: '100%', minHeight: 32, gap: 8, padding: '5px 6px', border: 0, borderRadius: 5, cursor: 'pointer', textAlign: 'left', background: active ? surface.selected : 'transparent', color: active ? accent : surface.text, fontSize: 12 } },
+              React.createElement(PaletteStrip, { theme: item, mode: props.mode }),
+              React.createElement('span', { style: { flex: 1 } }, item.label),
+              active ? React.createElement('span', { 'aria-label': '已选择', style: { color: accent, fontWeight: 700 } }, '✓') : null,
+            )
+          }),
+        ) : null,
       )
     }
 
@@ -358,10 +475,14 @@ window.__ModuleLoader__.load({
       var themeState = React.useState(meta && typeof meta.theme === 'string' ? themeById(meta.theme) : THEMES[0])
       var theme = themeState[0]
       var setTheme = themeState[1]
+      var modeState = React.useState(meta && typeof meta.mode === 'string' ? modeById(meta.mode) : MODES[0])
+      var mode = modeState[0]
+      var setMode = modeState[1]
 
-      // Reset the theme when a new result arrives (user selection is per-chart).
+      // Reset display preferences when a new result arrives (they are per-card).
       React.useEffect(function () {
         setTheme(meta && typeof meta.theme === 'string' ? themeById(meta.theme) : THEMES[0])
+        setMode(meta && typeof meta.mode === 'string' ? modeById(meta.mode) : MODES[0])
       }, [meta])
 
       React.useEffect(function () {
@@ -377,9 +498,9 @@ window.__ModuleLoader__.load({
 
         promise.then(function (api) {
           if (cancelled || !el) return
-          if (engine === 'mermaid') dispose = renderMermaid(el, api, meta.payload, theme)
-          else if (engine === 'three') dispose = renderThree(el, api, meta.payload, theme)
-          else dispose = renderEcharts(el, api, meta.payload, theme)
+          if (engine === 'mermaid') dispose = renderMermaid(el, api, meta.payload, theme, mode)
+          else if (engine === 'three') dispose = renderThree(el, api, meta.payload, theme, mode)
+          else dispose = renderEcharts(el, api, meta.payload, theme, mode)
         }).catch(function (err) {
           if (!cancelled) el.innerHTML = errHtml('engine load failed: ' + (err && err.message ? err.message : err))
         })
@@ -388,16 +509,22 @@ window.__ModuleLoader__.load({
           cancelled = true
           dispose()
         }
-      }, [meta, theme, block && block.callId])
+      }, [meta, theme, mode, block && block.callId])
 
       if (!meta || !meta.payload) return toolFallback(TOOL_NAME)
       var height = typeof meta.height === 'number' && meta.height >= 120 ? meta.height : 360
+      var surface = surfaceFor(mode)
+      var palette = paletteFor(theme, mode)
       return React.createElement(
         'div',
-        { 'data-artifact-tool': true },
+        { 'data-artifact-tool': true, style: { color: surface.text } },
         meta.title ? React.createElement('div', { style: { fontWeight: 600, marginBottom: 8, fontSize: 14 } }, meta.title) : null,
-        React.createElement(ThemeBar, { themes: THEMES, active: theme.id, onSelect: function (id) { setTheme(themeById(id)) } }),
-        React.createElement('div', { ref: containerRef, style: { width: '100%', height: height + 'px', minHeight: '200px' } }),
+        React.createElement(
+          'div',
+          { style: { position: 'relative', width: '100%', height: height + 'px', minHeight: '200px', borderRadius: 8, overflow: 'hidden', background: surface.background, border: '1px solid ' + surface.border } },
+          React.createElement('div', { ref: containerRef, style: { width: '100%', height: '100%' } }),
+          React.createElement(AppearanceMenu, { theme: theme, mode: mode, themes: THEMES, modes: MODES, surface: surface, palette: palette, onTheme: function (id) { setTheme(themeById(id)) }, onMode: function (id) { setMode(modeById(id)) } }),
+        ),
       )
     }
 

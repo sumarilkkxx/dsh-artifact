@@ -53,6 +53,8 @@ The model calls `render_artifact` with an ECharts option, and the chart appears 
 | `option` | object / string | ECharts option — engine=echarts (plain JSON, **no functions**; string templates like `{c}%`) |
 | `code` | string | Mermaid diagram source — engine=mermaid (flowchart / sequenceDiagram / classDiagram / gantt / stateDiagram / pie / erDiagram / journey) |
 | `spec` | object / string | Three.js scene — engine=three (`{"meshes":[{shape,color,size,position,rotation}],"background","ambient"}`) |
+| `theme` | string | Optional ECharts-inspired palette: `auto` · `tech-blue` (ECharts 5) · `minimal` (Vintage) · `night-purple` (Macarons) · `forest` (Shine) · `amber` (Roma) |
+| `mode` | string | Optional render surface: `auto` (system default) · `light` · `dark`; uses ECharts 5 light/default and dark component tokens, with a host-aligned dark canvas of `#040810` |
 | `title` | string | Card title |
 | `height` | number | Height in px (default 360, min 120) |
 
