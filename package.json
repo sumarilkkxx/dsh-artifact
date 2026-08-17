@@ -1,7 +1,7 @@
 {
   "name": "dsh-artifact",
   "version": "0.2.0",
-  "description": "Render ECharts, Mermaid, Three.js, and sandboxed custom HTML inline in DeepSeek Harness conversations — declarative payloads fed to the real engines.",
+  "description": "Render ECharts (including official ECharts-GL 3D charts), Mermaid, and sandboxed custom HTML inline in DeepSeek Harness conversations — declarative payloads fed to the real engines.",
   "license": "MIT",
   "type": "module",
   "main": "./index.js",
@@ -31,9 +31,9 @@
     "build": "node scripts/build.mjs"
   },
   "devDependencies": {
-    "echarts": "^5.5.1",
-    "mermaid": "^11.16.1",
-    "three": "^0.149.0"
+    "echarts": "^6.1.0",
+    "echarts-gl": "^2.1.0",
+    "mermaid": "^11.16.1"
   },
   "engines": {
     "node": ">=22.19"

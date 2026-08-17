@@ -1,4 +1,4 @@
-// dsh-artifact build: copy the ECharts / Mermaid / Three UMD distributions into
+// dsh-artifact build: copy the ECharts / ECharts-GL / Mermaid UMD distributions into
 // assets/ so the host half can serve them as lazy on-demand engines. The plugin
 // ships the copied assets; the engines themselves are build-time (dev)
 // dependencies only.
@@ -12,8 +12,8 @@ await mkdir(destDir, { recursive: true })
 
 const engines = [
   ['echarts', 'echarts/dist/echarts.min.js', 'echarts.min.js'],
+  ['echarts-gl', 'echarts-gl/dist/echarts-gl.min.js', 'echarts-gl.min.js'],
   ['mermaid', 'mermaid/dist/mermaid.min.js', 'mermaid.min.js'],
-  ['three', 'three/build/three.min.js', 'three.min.js'],
 ]
 
 for (const [name, srcRel, out] of engines) {

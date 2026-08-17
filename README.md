@@ -2,23 +2,23 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-> Render interactive **ECharts / Mermaid / Three.js** and sandboxed custom HTML inline in DeepSeek Harness conversations.
+> Render interactive **ECharts (including ECharts-GL 3D) / Mermaid** and sandboxed custom HTML inline in DeepSeek Harness conversations.
 
-`dsh-artifact` lets the model render real, interactive content — not hand-drawn SVG, not a wall of text — directly inside the conversation. The model calls `render_artifact` with a **declarative payload** — a plain-JSON ECharts `option`, a Mermaid diagram, or a Three.js 3D scene — and the Web UI renders it with the real engine (tooltip, zoom, legend, diagrams, 3D previews). A second tool, `render_html`, renders arbitrary custom HTML/CSS/JS in a **sandboxed iframe**.
+`dsh-artifact` lets the model render real, interactive content — not hand-drawn SVG, not a wall of text — directly inside the conversation. The model calls `render_artifact` with a **declarative payload** — a plain-JSON ECharts `option` (including official ECharts-GL 3D series) or a Mermaid diagram — and the Web UI renders it with the real engine. A second tool, `render_html`, renders arbitrary custom HTML/CSS/JS in a **sandboxed iframe**.
 
 ## Why dsh-artifact
 
 | | dsh-genui | dsh-visualize | **dsh-artifact** |
 |---|---|---|---|
-| Model output | whitelisted JSON tree | arbitrary HTML/JS | **declarative payload (ECharts / Mermaid / Three)** |
-| Real engine | ✗ (3 hand-drawn chart kinds) | ✓ (via HTML) | **✓ (ECharts + Mermaid + Three.js)** |
+| Model output | whitelisted JSON tree | arbitrary HTML/JS | **declarative payload (ECharts / ECharts-GL / Mermaid)** |
+| Real engine | ✗ (3 hand-drawn chart kinds) | ✓ (via HTML) | **✓ (ECharts + ECharts-GL + Mermaid)** |
 | Inline in conversation | ✓ | ✗ (tool row only) | ✓ (tool card) |
 | Interactive | ✓ | partial | ✓ (tooltip / zoom / legend / 3D) |
 | Arbitrary HTML sandbox | ✗ | ✓ | **✓ (`render_html`)** |
 | Action round-trip | ✓ | ✗ | roadmap (v0.3) |
 | Security model | whitelist | sandboxed iframe | **pure JSON + sandboxed iframe** |
 
-`dsh-genui` hand-draws three chart kinds; `dsh-visualize` renders arbitrary HTML but has no round-trip. `dsh-artifact` feeds the **real engines** (ECharts, Mermaid, Three.js) with **declarative JSON payloads** the model is already excellent at writing, and adds a **sandboxed HTML** channel for custom widgets — full capability at a lower authoring cost, behind strict JSON-only and iframe-sandbox security boundaries.
+`dsh-genui` hand-draws three chart kinds; `dsh-visualize` renders arbitrary HTML but has no round-trip. `dsh-artifact` feeds the **real engines** (ECharts, its official ECharts-GL extension, and Mermaid) with **declarative JSON payloads** the model is already excellent at writing, and adds a **sandboxed HTML** channel for custom widgets — full capability at a lower authoring cost, behind strict JSON-only and iframe-sandbox security boundaries.
 
 ## Install
 
@@ -45,18 +45,57 @@ Ask the model for a chart:
 
 The model calls `render_artifact` with an ECharts option, and the chart appears as an interactive card in the conversation.
 
-### `render_artifact` (charts / diagrams / 3D)
+### `render_artifact` (ECharts charts / diagrams)
 
 | Parameter | Type | Description |
 |---|---|---|
-| `engine` | string | `echarts` (default) · `mermaid` · `three` |
-| `option` | object / string | ECharts option — engine=echarts (plain JSON, **no functions**; string templates like `{c}%`) |
+| `engine` | string | `echarts` (default, including ECharts-GL 3D options) · `mermaid` |
+| `option` | object / string | Native ECharts option — engine=echarts (plain JSON, **no functions**; string templates like `{c}%`) |
+| `maps` | object / string | Optional named GeoJSON/SVG registry for `geo` / `map` charts; each entry is registered with `echarts.registerMap` before `echarts.init` |
 | `code` | string | Mermaid diagram source — engine=mermaid (flowchart / sequenceDiagram / classDiagram / gantt / stateDiagram / pie / erDiagram / journey) |
-| `spec` | object / string | Three.js scene — engine=three (`{"meshes":[{shape,color,size,position,rotation}],"background","ambient"}`) |
 | `theme` | string | Optional ECharts-inspired palette: `auto` · `tech-blue` (ECharts 5) · `minimal` (Vintage) · `night-purple` (Macarons) · `forest` (Shine) · `amber` (Roma) |
 | `mode` | string | Optional render surface: `auto` (system default) · `light` · `dark`; uses ECharts 5 light/default and dark component tokens, with a host-aligned dark canvas of `#040810` |
 | `title` | string | Card title |
 | `height` | number | Height in px (default 360, min 120) |
+
+### Native ECharts compatibility
+
+The browser card creates a full ECharts 6 instance and sends your `option` to
+`setOption` unchanged. It does not translate the request into a small preset
+catalogue, so native JSON-expressible ECharts components and series work as
+documented: cartesian, calendar, polar, radar, geo/map, graph, hierarchy,
+parallel, timeline, `dataset`, `visualMap`, `dataZoom`, `graphic`, and more.
+
+The in-canvas appearance menu is implemented as a registered ECharts theme
+(`echarts.registerTheme` followed by `echarts.init`). This gives every built-in
+component consistent light/dark tokens while preserving explicit user option
+values, as defined by ECharts' normal theme precedence.
+
+JavaScript callbacks cannot cross the tool's JSON security boundary. Prefer
+ECharts string templates for formatters; use `render_html` for the exceptional
+callback-only APIs such as a custom-series `renderItem`. Map charts must include
+their legal GeoJSON/SVG definition in `maps`; the plugin deliberately does not
+download map data from the network.
+
+### Official ECharts-GL 3D charts
+
+3D visualizations stay within `engine: "echarts"`. `scatter3D`, `bar3D`,
+`line3D`, `lines3D`, `surface`, `map3D`, `grid3D`, and `globe` cause the card
+to load the official ECharts-GL extension on demand. A non-destructive quality
+compiler fills only missing values for the `globe`, `grid3D`/`surface`, and
+`geo3D`/`map3D` families: light, camera, post-processing, and common layout.
+The bundled offline globe baseline adds the official example's earth texture,
+terrain, starfield, and HDR environment; no external network request is made.
+
+The in-canvas appearance menu remains above all WebGL layers. Standard ECharts
+charts retain the full categorical theme set. Non-globe ECharts-GL data charts
+instead expose calm monochromatic ramps (Azure, Emerald, Amber, Rose, and
+Slate), tuned for depth and material readability. A photorealistic `globe`
+only exposes background mode: a satellite texture is geographic imagery, not a
+data palette, and is never recolored by the menu. An explicit user texture,
+environment, material, camera, light, color, or atmosphere configuration is
+preserved.
+This is for data visualization, not arbitrary 3D-model or game-scene construction.
 
 ### `render_html` (sandboxed custom widget)
 
@@ -84,7 +123,7 @@ Example the model produces:
 
 ### Security model
 
-- Declarative payloads (`option` / `spec`) must be **pure JSON** — functions, `undefined`, and symbols are rejected by the host half.
+- Declarative ECharts `option` payloads must be **pure JSON** — functions, `undefined`, and symbols are rejected by the host half.
 - Engine assets are served only from the plugin's own route; path traversal is blocked.
 - `render_html` widgets run in a **sandboxed iframe** (opaque origin) with a CSP that blocks network, top navigation, and form submission; only inline scripts/styles are allowed.
 
@@ -96,7 +135,7 @@ dsh-artifact/
 ├── client.js              # browser half: keyed toolviews + engine dispatch + sandboxed iframe
 ├── cordis.patch.yml       # bundle layer (insert dsh-artifact)
 ├── package.json           # dsh.bundle + dsh.client manifests
-├── assets/                # engine UMDs (echarts/mermaid/three; built, shipped for git-install)
+├── assets/                # engine UMDs (echarts/echarts-gl/mermaid; built, shipped for git-install)
 └── scripts/build.mjs      # copies engine dists -> assets/
 ```
 
@@ -117,16 +156,16 @@ dsh-artifact/
 | Path | Purpose |
 |---|---|
 | `index.js` | Host half — `render_artifact` + `render_html` tool definitions, system-prompt section, lazy-asset route |
-| `client.js` | Browser half — keyed toolviews, engine dispatch (echarts/mermaid/three), sandboxed iframe |
+| `client.js` | Browser half — keyed toolviews, ECharts/ECharts-GL/Mermaid dispatch, sandboxed iframe |
 | `cordis.patch.yml` | Bundle layer; `name` is a **package name** resolved through node_modules, not a path |
 | `package.json` | `dsh.bundle` + `dsh.client` manifests, `exports["./client"]`, build scripts |
-| `assets/*.min.js` | Engine UMD builds (echarts/mermaid/three; committed so `dsh plugin add github:...` needs no build) |
+| `assets/*.min.js` | Engine UMD builds (echarts/echarts-gl/mermaid; committed so `dsh plugin add github:...` needs no build) |
 | `scripts/build.mjs` | Copies engine dists → `assets/` |
 
 ### Build
 
 ```sh
-npm install     # installs echarts/mermaid/three (build-time only; NOT runtime deps)
+npm install     # installs echarts/echarts-gl/mermaid (build-time only; NOT runtime deps)
 npm run build   # copies the engine UMD bundles into assets/
 ```
 
@@ -174,7 +213,7 @@ node scripts/smoke-test.mjs
 
 ### v0.2 — multi-engine + HTML sandbox ✅ shipped
 
-- Additional engines: **mermaid** (flow/sequence/class/gantt/state/pie/er/journey), **three.js** (declarative 3D scenes)
+- Additional engine: **mermaid** (flow/sequence/class/gantt/state/pie/er/journey); 3D data visualization uses official **ECharts-GL**
 - A second tool (`render_html`): render model-written HTML/CSS/JS in a **sandboxed `iframe`** (opaque origin + CSP) for custom widgets the declarative engines cannot express
 - Engine asset bundling generalized (per-engine UMD assets + a shared lazy loader)
 - Verified end-to-end: all three engines render in a real browser; the sandbox runs inline scripts while blocking network
