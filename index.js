@@ -71,16 +71,16 @@ const SKILL_CONTENT = `# dsh-artifact 渲染指南
 
 ## 主题（可选 \`theme\` 参数）
 
-为图表 / 3D 快速套用配色主题（用户也能在卡片上方的主题条里点击切换，无需重新生成）：
+为图表 / 3D 快速套用配色主题（用户也能在画布右上角的「外观」菜单里切换，无需重新生成）：
 
 - \`auto\`（默认，保留 payload 自带颜色）
-- \`tech-blue\` 科技蓝（深蓝底 + 蓝青系）
-- \`minimal\` 极简白（浅色底 + 蓝灰系）
-- \`night-purple\` 暗夜紫（深紫底 + 紫罗兰系）
-- \`forest\` 墨绿（深绿底 + 翡翠系）
-- \`amber\` 暖橙（暖深底 + 琥珀系）
+- \`tech-blue\` ECharts 5（官方 v5 默认色板）
+- \`minimal\` Vintage（官方复古纸感色板）
+- \`night-purple\` Macarons（官方柔和彩色系）
+- \`forest\` Shine（官方高对比业务色板）
+- \`amber\` Roma（官方编辑感色板）
 
-当用户说「换成暗夜紫主题」「用深色科技蓝背景」时，在 render_artifact 调用里加 \`"theme":"night-purple"\`（或对应 id），并保持原有 \`option\` / \`spec\` 不变。
+\`mode\` 控制渲染区域的明暗：\`auto\`（默认，跟随系统）/ \`light\` / \`dark\`。主题仅控制数据色板；模式按 ECharts 5 浅色默认与 dark 组件 token 控制文字、网格和提示框，深色画布背景为宿主一致的 \`#040810\`（RGB 4, 8, 16）；二者可以任意组合。当用户说「用深色 ECharts 5」「浅色 Vintage」时，同时传 \`theme\` 和 \`mode\`。
 
 ## render_html（自定义交互组件）
 
@@ -216,15 +216,20 @@ function cardTitle(title) {
 function resolveMeta(args) {
   const a = unwrapArgs(args)
   const engine = a.engine === 'mermaid' || a.engine === 'three' ? a.engine : 'echarts'
-  const title = typeof a.title === 'string' ? a.title : undefined
-  const height = typeof a.height === 'number' ? a.height : 360
   let payload
   if (engine === 'mermaid') payload = typeof a.code === 'string' ? a.code : undefined
   else if (engine === 'three') payload = normalizeObjectPayload(a.spec)
   else payload = normalizeObjectPayload(a.option)
   // Defensive: never let non-JSON values (e.g. BigInt) into the persisted meta.
   if (payload !== undefined && !isJsonSafe(payload, 0)) payload = undefined
-  return { engine, payload, title, height, theme: typeof a.theme === 'string' ? a.theme : undefined }
+  // Omit undefined fields: presentationMeta must be lossless JSON, and the
+  // harness's lossless-JSON check rejects `undefined` values outright.
+  const meta = { engine, height: typeof a.height === 'number' ? a.height : 360 }
+  if (payload !== undefined) meta.payload = payload
+  if (typeof a.title === 'string') meta.title = a.title
+  if (typeof a.theme === 'string') meta.theme = a.theme
+  if (a.mode === 'light' || a.mode === 'dark' || a.mode === 'auto') meta.mode = a.mode
+  return meta
 }
 
 /** Validate an ECharts option; returns a message on failure, else null. */
@@ -323,7 +328,12 @@ function createRenderArtifactTool() {
         },
         theme: {
           type: 'string',
-          description: 'Optional color theme: auto (默认) / tech-blue (科技蓝) / minimal (极简白) / night-purple (暗夜紫) / forest (墨绿) / amber (暖橙). Overrides background + series palette + text color.',
+          description: 'Optional data color theme: auto (默认) / tech-blue (ECharts 5) / minimal (Vintage) / night-purple (Macarons) / forest (Shine) / amber (Roma).',
+        },
+        mode: {
+          type: 'string',
+          enum: ['auto', 'light', 'dark'],
+          description: 'Optional rendering surface mode: auto (follow system, default) / light / dark. Controls background, text, grid, and tooltip independently of theme.',
         },
         title: { type: 'string', description: 'Optional card title.' },
         height: { type: 'number', description: 'Optional height in px (default 360, min 120).' },
@@ -366,11 +376,10 @@ function createRenderArtifactTool() {
 /** Resolve the render_html meta persisted onto the tool result (pure). */
 function resolveHtmlMeta(args) {
   const a = unwrapArgs(args)
-  return {
-    html: typeof a.html === 'string' ? a.html : undefined,
-    title: typeof a.title === 'string' ? a.title : undefined,
-    height: typeof a.height === 'number' ? a.height : 400,
-  }
+  const meta = { height: typeof a.height === 'number' ? a.height : 400 }
+  if (typeof a.html === 'string') meta.html = a.html
+  if (typeof a.title === 'string') meta.title = a.title
+  return meta
 }
 
 /** Build the raw `render_html` tool definition (sandboxed custom widget). */

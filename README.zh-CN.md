@@ -53,6 +53,8 @@ dsh plugin --profile web add .
 | `option` | object / string | ECharts 配置——engine=echarts（纯 JSON，**禁止函数**；字符串模板如 `{c}%`） |
 | `code` | string | Mermaid 图源码——engine=mermaid（flowchart / sequenceDiagram / classDiagram / gantt / stateDiagram / pie / erDiagram / journey） |
 | `spec` | object / string | Three.js 场景——engine=three（`{"meshes":[{shape,color,size,position,rotation}],"background","ambient"}`） |
+| `theme` | string | 可选 ECharts 风格色板：`auto` · `tech-blue`（ECharts 5）· `minimal`（Vintage）· `night-purple`（Macarons）· `forest`（Shine）· `amber`（Roma） |
+| `mode` | string | 可选渲染明暗：`auto`（默认跟随系统）· `light` · `dark`；按 ECharts 5 浅色默认与 dark 组件 token 控制文字、网格和提示框，深色画布使用宿主一致的 `#040810` |
 | `title` | string | 卡片标题 |
 | `height` | number | 高度 px（默认 360，最小 120） |
 
