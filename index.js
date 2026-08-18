@@ -71,8 +71,12 @@ const SKILL_CONTENT = `# dsh-artifact 渲染指南
 \`\`\`
 
 ### mermaid（流程图 / 图）
-\`{"engine":"mermaid","code":"flowchart TD; A-->B;"}\`
-- \`code\` 是 Mermaid 图源码：flowchart / sequenceDiagram / classDiagram / gantt / stateDiagram / pie / erDiagram / journey。
+\`{"engine":"mermaid","code":"flowchart TD\\n  startNode[\"开始\"] --> reviewNode{\"需要审核？\"}\\n  reviewNode -->|是| terminalNode[\"结束\"]\\n  classDef terminal fill:#F0564A,color:#fff,stroke:#D63D32,stroke-width:1px\\n  class terminalNode terminal"}\`
+- \`code\` 是原始 Mermaid 源码：flowchart / sequenceDiagram / classDiagram / gantt / stateDiagram / pie / erDiagram / journey。不要包在 Markdown 代码围栏中；每条语句独占一行，避免将图源码写成 JSON、HTML 或 SVG。
+- **ID 与 classDef 名称必须使用安全 ASCII 标识符**：以字母开头，只含字母、数字和下划线，例如 \`startNode\`、\`reviewStep\`、\`terminal\`。不要用 Mermaid 保留词 \`end\`、\`subgraph\`、\`class\`、\`classDef\`、\`style\`、\`direction\` 作为节点 ID 或样式类名。要显示“结束”，写 \`terminalNode[\"结束\"]\`，不要写 \`end\` 或 \`classDef end\`。
+- 标签含中文、空格、括号、冒号、引号或其他特殊字符时，统一使用 \`nodeId[\"标签\"]\` 形式；标签与 ID 分离。flowchart 的 \`end\` 文本必须写成 \`End\` / \`结束\` 或置于引号标签中。
+- 样式使用官方 \`classDef className fill:#...,stroke:#...,color:#...\` 与 \`class nodeId className\` 语法；属性用英文逗号分隔。不要依赖外部 CSS，也不要使用 JavaScript 回调。
+- flowchart 连线中 \`o\` / \`x\` 开头的目标 ID 要大写或在连线后留空格，避免被误解为圆/叉边。不同图类型遵循官方 Mermaid 语法；拿不准时使用对应图类型的最小原生写法，而不是拼接 flowchart 语法。
 
 ### ECharts-GL（官方 3D 数据图）
 - 3D 仍使用 \`engine:"echarts"\` 和官方 ECharts option；检测到 \`scatter3D\` / \`bar3D\` / \`line3D\` / \`lines3D\` / \`surface\` / \`map3D\` / \`globe\` 等配置时，插件按需加载官方 ECharts-GL 扩展。
@@ -289,6 +293,23 @@ function checkMermaid(code) {
   if (Buffer.byteLength(code, 'utf8') > CODE_MAX_BYTES) {
     return `${TOOL_NAME}: "code" is too large (over the ${CODE_MAX_BYTES}-byte cap).`
   }
+  // Mermaid source is not Markdown. Fences reach the parser as literal tokens
+  // and prevent the model from receiving a useful render/retry cycle.
+  if (/^\s*```/m.test(code)) {
+    return `${TOOL_NAME}: Mermaid "code" must be raw diagram source, not a Markdown code fence. Remove \`\`\`mermaid / \`\`\` and retry.`
+  }
+  // Mermaid treats lowercase `end` as grammar in flowcharts. It is also an
+  // invalid class name in the reported `classDef end ...` failure. Catch only
+  // unambiguous identifier positions; never rewrite labels or subgraph closes.
+  if (/^\s*classDef\s+end(?=\s|,|;|$)/m.test(code)) {
+    return `${TOOL_NAME}: Mermaid reserves lowercase "end"; \`classDef end ...\` cannot parse. Rename the class (for example \`classDef terminal ...\`) and update \`class nodeId terminal\` / \`:::terminal\` references, then retry.`
+  }
+  if (/^\s*class\s+[^\n]*?(?:\s|,)end(?=\s|,|;|$)/m.test(code) || /:::end(?=\W|$)/.test(code)) {
+    return `${TOOL_NAME}: Mermaid reserves lowercase "end" as a class name. Use a safe class identifier such as \`terminal\`; keep display text in a quoted node label, for example \`terminalNode["结束"]\`.`
+  }
+  if (/^\s*style\s+end(?=\s|,|;|$)/m.test(code) || /^\s*end\s*(?:\[|\(|\{|-->|---|==>|-\.->)/m.test(code)) {
+    return `${TOOL_NAME}: Mermaid reserves lowercase "end" as a flowchart identifier. Use \`terminalNode\` as the ID and write the display label separately: \`terminalNode["End"]\` or \`terminalNode["结束"]\`.`
+  }
   return null
 }
 
@@ -306,7 +327,7 @@ function createRenderArtifactTool() {
       + 'TRIGGER: use whenever the user asks for any chart / plot / diagram / visualization / 3D preview (画图 / 图表 / 可视化 / 流程图 / 3D / 组件), even without naming this tool. '
       + 'Pick an engine and pass the matching field: '
       + 'engine="echarts" with `option` (plain-JSON ECharts option, no functions — use string templates like "{c}%" for formatters; every ECharts chart type works, and ECharts-GL 3D types such as scatter3D/bar3D/surface load automatically); '
-      + 'engine="mermaid" with `code` (Mermaid diagram source: flowchart/sequenceDiagram/classDiagram/gantt/stateDiagram/pie/erDiagram/journey). '
+      + 'engine="mermaid" with raw `code` (Mermaid diagram source: flowchart/sequenceDiagram/classDiagram/gantt/stateDiagram/pie/erDiagram/journey; no Markdown fences; use safe ASCII IDs/classes such as terminalNode, never lowercase `end`). '
       + 'Do not answer with prose or a Markdown table when a chart / diagram is the better representation.',
     parameters: {
       type: 'object',
@@ -332,7 +353,7 @@ function createRenderArtifactTool() {
         },
         code: {
           type: 'string',
-          description: 'Mermaid diagram source (engine=mermaid): flowchart, sequenceDiagram, classDiagram, gantt, stateDiagram, pie, erDiagram, journey.',
+          description: 'Raw Mermaid diagram source (engine=mermaid). No Markdown fences. Use safe ASCII node IDs/classDef names; never use lowercase "end" as an ID or class name.',
         },
         theme: {
           type: 'string',

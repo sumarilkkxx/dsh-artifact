@@ -37,6 +37,16 @@ window.__ModuleLoader__.load({
 
     var pending = {}
     var echartsGlPending = null
+    // Mermaid keeps its configuration globally. Rendering cards with different
+    // light/dark palettes concurrently can otherwise make one card inherit
+    // another card's theme, so each initialize → parse → render transaction is
+    // serialized while ECharts cards remain fully concurrent.
+    var mermaidRenderTail = Promise.resolve()
+    function enqueueMermaidRender(task) {
+      var run = mermaidRenderTail.then(task, task)
+      mermaidRenderTail = run.catch(function () {})
+      return run
+    }
     function loadAsset(file, globalName) {
       var existing = window.__ArtifactAssets__ && window.__ArtifactAssets__[globalName]
       if (existing) return Promise.resolve(existing)
@@ -174,6 +184,27 @@ window.__ModuleLoader__.load({
     function paletteFor(theme, mode) {
       if (!theme || theme.id === 'auto') return null
       return resolvedMode(mode) === 'dark' ? theme.dark : theme.light
+    }
+
+    // Mermaid is a diagram language rather than a data chart. Keep it on a
+    // deliberately neutral, mode-only skin so ECharts' multi-series palettes
+    // do not unexpectedly recolor authored diagram semantics.
+    function mermaidThemeVariables(mode) {
+      var dark = resolvedMode(mode) === 'dark'
+      if (dark) return {
+        background: '#040810', primaryColor: '#18263A', primaryTextColor: '#F3F6FB', primaryBorderColor: '#8FA6C4',
+        secondaryColor: '#132238', secondaryTextColor: '#F3F6FB', tertiaryColor: '#0B1220', tertiaryTextColor: '#F3F6FB',
+        lineColor: '#B2C0D2', textColor: '#F3F6FB', mainBkg: '#18263A', nodeBorder: '#8FA6C4',
+        clusterBkg: '#0B1220', clusterBorder: '#647995', noteBkgColor: '#243550', noteTextColor: '#F3F6FB', noteBorderColor: '#8FA6C4',
+        edgeLabelBackground: '#040810', titleColor: '#F3F6FB', actorTextColor: '#F3F6FB', actorBkg: '#18263A', actorBorder: '#8FA6C4',
+      }
+      return {
+        background: '#FFFFFF', primaryColor: '#F5F8FC', primaryTextColor: '#172033', primaryBorderColor: '#58708F',
+        secondaryColor: '#EEF4FB', secondaryTextColor: '#172033', tertiaryColor: '#F9FAFC', tertiaryTextColor: '#172033',
+        lineColor: '#52667D', textColor: '#172033', mainBkg: '#F5F8FC', nodeBorder: '#58708F',
+        clusterBkg: '#F9FAFC', clusterBorder: '#B7C4D4', noteBkgColor: '#FFF9E7', noteTextColor: '#172033', noteBorderColor: '#B58B2E',
+        edgeLabelBackground: '#FFFFFF', titleColor: '#172033', actorTextColor: '#172033', actorBkg: '#F5F8FC', actorBorder: '#58708F',
+      }
     }
 
     // ECharts applies a registered theme before the user option. This matters:
@@ -431,9 +462,12 @@ window.__ModuleLoader__.load({
 
     // ---------- engine renderers (each returns a disposer) ----------
 
-    function imageFilename(title) {
+    function imageStem(title) {
       var safe = typeof title === 'string' ? title.trim().replace(/[\\/:*?"<>|\x00-\x1f]+/g, '-').replace(/\s+/g, '-') : ''
-      return (safe || 'dsh-artifact') + '.png'
+      return safe || 'dsh-artifact'
+    }
+    function imageFilename(title, extension) {
+      return imageStem(title) + '.' + (extension || 'png')
     }
     function downloadBlob(blob, filename) {
       var url = URL.createObjectURL(blob)
@@ -446,14 +480,123 @@ window.__ModuleLoader__.load({
       document.body.removeChild(link)
       window.setTimeout(function () { URL.revokeObjectURL(url) }, 1000)
     }
-    function downloadDataUrl(dataUrl, filename) {
-      var link = document.createElement('a')
-      link.href = dataUrl
-      link.download = filename
-      link.style.display = 'none'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+    function dataUrlToBlob(dataUrl) {
+      var parts = String(dataUrl).split(',')
+      var header = parts[0] || ''
+      var body = parts.slice(1).join(',')
+      var mime = (header.match(/^data:([^;,]+)/i) || [])[1] || 'application/octet-stream'
+      var bytes = atob(body)
+      var buffer = new Uint8Array(bytes.length)
+      for (var i = 0; i < bytes.length; i++) buffer[i] = bytes.charCodeAt(i)
+      return new Blob([buffer], { type: mime })
+    }
+    function svgWithInlineStyles(svg, width, height) {
+      var clone = svg.cloneNode(true)
+      var sourceNodes = [svg].concat(Array.prototype.slice.call(svg.querySelectorAll('*')))
+      var cloneNodes = [clone].concat(Array.prototype.slice.call(clone.querySelectorAll('*')))
+      sourceNodes.forEach(function (node, index) {
+        var target = cloneNodes[index]
+        if (!target || !window.getComputedStyle) return
+        var style = window.getComputedStyle(node)
+        var text = ''
+        for (var i = 0; i < style.length; i++) {
+          var property = style[i]
+          text += property + ':' + style.getPropertyValue(property) + ';'
+        }
+        if (text) target.setAttribute('style', text)
+      })
+      // Mermaid 11 still uses foreignObject for a number of labels even with
+      // htmlLabels disabled. Browsers treat such SVGs as unsafe canvas input
+      // in some embedded WebViews, making toBlob fail. Convert only the export
+      // clone to native SVG text so the interactive on-screen diagram remains
+      // untouched while its PNG counterpart is safe to encode.
+      Array.prototype.slice.call(svg.querySelectorAll('foreignObject')).forEach(function (sourceObject) {
+        var index = sourceNodes.indexOf(sourceObject)
+        var targetObject = cloneNodes[index]
+        if (!targetObject || !targetObject.parentNode) return
+        var label = sourceObject.textContent ? sourceObject.textContent.trim().replace(/\s+/g, ' ') : ''
+        if (!label) { targetObject.parentNode.removeChild(targetObject); return }
+        var x = parseFloat(sourceObject.getAttribute('x') || '0')
+        var y = parseFloat(sourceObject.getAttribute('y') || '0')
+        var objectWidth = parseFloat(sourceObject.getAttribute('width') || '0')
+        var objectHeight = parseFloat(sourceObject.getAttribute('height') || '0')
+        var style = window.getComputedStyle ? window.getComputedStyle(sourceObject) : null
+        var labelNode = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+        labelNode.textContent = label
+        labelNode.setAttribute('x', String(x + objectWidth / 2))
+        labelNode.setAttribute('y', String(y + objectHeight / 2))
+        labelNode.setAttribute('text-anchor', 'middle')
+        labelNode.setAttribute('dominant-baseline', 'middle')
+        if (sourceObject.getAttribute('transform')) labelNode.setAttribute('transform', sourceObject.getAttribute('transform'))
+        if (style) {
+          labelNode.setAttribute('fill', style.color || '#172033')
+          labelNode.setAttribute('font-family', style.fontFamily || 'sans-serif')
+          labelNode.setAttribute('font-size', style.fontSize || '14px')
+          labelNode.setAttribute('font-weight', style.fontWeight || '400')
+        }
+        targetObject.parentNode.replaceChild(labelNode, targetObject)
+      })
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+      clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+      clone.setAttribute('width', String(width))
+      clone.setAttribute('height', String(height))
+      if (!clone.getAttribute('viewBox')) clone.setAttribute('viewBox', '0 0 ' + width + ' ' + height)
+      return clone
+    }
+    function mermaidSvgBlob(svg) {
+      var rect = svg.getBoundingClientRect()
+      var viewBox = svg.viewBox && svg.viewBox.baseVal
+      var width = Math.max(1, Math.round(rect.width || (viewBox && viewBox.width) || 800))
+      var height = Math.max(1, Math.round(rect.height || (viewBox && viewBox.height) || 600))
+      var source = new XMLSerializer().serializeToString(svgWithInlineStyles(svg, width, height))
+      return { width: width, height: height, blob: new Blob(['<?xml version="1.0" encoding="UTF-8"?>' + source], { type: 'image/svg+xml;charset=utf-8' }) }
+    }
+    function exportMermaidPng(svg, surface) {
+      var source = mermaidSvgBlob(svg)
+      return new Promise(function (resolve, reject) {
+        var image = new Image()
+        var url = URL.createObjectURL(source.blob)
+        function cleanUp() { URL.revokeObjectURL(url) }
+        image.onload = function () {
+          try {
+            var ratio = Math.min(2, window.devicePixelRatio || 1)
+            var canvas = document.createElement('canvas')
+            canvas.width = Math.round(source.width * ratio)
+            canvas.height = Math.round(source.height * ratio)
+            var context = canvas.getContext('2d')
+            if (!context) throw new Error('PNG canvas is unavailable')
+            context.fillStyle = surface.background
+            context.fillRect(0, 0, canvas.width, canvas.height)
+            context.drawImage(image, 0, 0, canvas.width, canvas.height)
+            cleanUp()
+            canvas.toBlob(function (blob) {
+              if (!blob) { reject(new Error('PNG encoding failed')); return }
+              resolve(blob)
+            }, 'image/png')
+          } catch (err) { reject(err) }
+        }
+        image.onerror = function () { cleanUp(); reject(new Error('diagram image conversion failed')) }
+        image.src = url
+      })
+    }
+    function exportMermaidSvg(svg) {
+      return mermaidSvgBlob(svg).blob
+    }
+    function exportEchartsSvg(echarts, option, theme, mode, maps, width, height, title) {
+      var holder = document.createElement('div')
+      holder.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:' + width + 'px;height:' + height + 'px;visibility:hidden;pointer-events:none;'
+      document.body.appendChild(holder)
+      var svgChart = null
+      try {
+        registerMaps(echarts, maps)
+        svgChart = echarts.init(holder, registerEchartsTheme(echarts, theme, mode), { renderer: 'svg', width: width, height: height })
+        svgChart.setOption(option)
+        if (typeof svgChart.renderToSVGString !== 'function') throw new Error('SVG export is unavailable for this chart')
+        return new Blob([svgChart.renderToSVGString()], { type: 'image/svg+xml;charset=utf-8' })
+      } finally {
+        if (svgChart) svgChart.dispose()
+        document.body.removeChild(holder)
+      }
     }
     function renderEcharts(el, echarts, option, theme, mode, maps, onExport) {
       if (!option || typeof option !== 'object') { el.innerHTML = errHtml('invalid echarts option'); return noop }
@@ -462,9 +605,11 @@ window.__ModuleLoader__.load({
         registerMaps(echarts, maps)
         chart = echarts.init(el, registerEchartsTheme(echarts, theme, mode))
         chart.setOption(compileGlOption(option, theme, mode))
-        if (onExport) onExport(function () {
-          downloadDataUrl(chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: surfaceFor(mode).background }), imageFilename(option.title && !Array.isArray(option.title) ? option.title.text : undefined))
-        })
+        if (onExport) onExport(function (format) {
+          var title = option.title && !Array.isArray(option.title) ? option.title.text : undefined
+          if (format === 'svg') return exportEchartsSvg(echarts, option, theme, mode, maps, Math.max(1, el.clientWidth), Math.max(1, el.clientHeight), title)
+          return dataUrlToBlob(chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: surfaceFor(mode).background }))
+        }, usesEchartsGl(option) ? ['png'] : ['png', 'svg'])
       } catch (e) {
         if (chart) chart.dispose()
         el.innerHTML = errHtml('ECharts render failed: ' + (e && e.message ? e.message : e) + '. Check the ECharts option, required coordinate system/component, and map registration.')
@@ -475,65 +620,72 @@ window.__ModuleLoader__.load({
       return function () { if (onExport) onExport(null); ro.disconnect(); chart.dispose() }
     }
 
+    function normalizeMermaidSource(code) {
+      return String(code).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim()
+    }
+
+    // The official Mermaid grammar reserves lowercase `end`. Repair only the
+    // exact class-name failure that has an unambiguous replacement; labels and
+    // subgraph terminators are intentionally left untouched.
+    function repairMermaidReservedClassName(code) {
+      if (!/^\s*classDef\s+end(?=\s|,|;|$)/m.test(code)) return { code: code, repaired: false }
+      var repaired = code.replace(/^(\s*classDef\s+)end(?=\s|,|;|$)/m, '$1dshTerminal')
+      repaired = repaired.replace(/^(\s*class\s+[^\n]*?\s)end(?=\s*(?:;|$))/gm, '$1dshTerminal')
+      repaired = repaired.replace(/:::end(?=\W|$)/g, ':::dshTerminal')
+      return { code: repaired, repaired: true }
+    }
+
+    function mermaidErrorMessage(error, code) {
+      var raw = error && error.message ? error.message : String(error || 'unknown parser error')
+      var line = raw.match(/line\s+(\d+)/i)
+      var location = line ? ' on line ' + line[1] : ''
+      if (/got ['"]?end['"]?|classDef\s+end|lowercase [`'"]?end/i.test(raw) || /^\s*classDef\s+end/m.test(code)) {
+        return 'Mermaid syntax error' + location + ': lowercase "end" is reserved. Use a safe ID/class such as "terminalNode" or "terminal", and put “End” / “结束” in a quoted label.'
+      }
+      if (/parse error|expecting/i.test(raw)) {
+        return 'Mermaid syntax error' + location + '. Check the diagram type, quoted labels, node IDs, and classDef syntax; Mermaid source must not be wrapped in a Markdown code fence.'
+      }
+      return 'Mermaid render failed' + location + ': ' + raw
+    }
+
     function renderMermaid(el, mermaid, code, theme, mode, onExport) {
       if (typeof code !== 'string' || code.trim() === '') { el.innerHTML = errHtml('empty mermaid code'); return noop }
       var surface = surfaceFor(mode)
-      var palette = paletteFor(theme, mode) || (resolvedMode(mode) === 'dark'
-        ? ['#4992FF', '#7CFFB2', '#FDDD60']
-        : ['#5470C6', '#91CC75', '#FAC858'])
-      try {
-        mermaid.initialize({
-          startOnLoad: false, securityLevel: 'strict', theme: 'base',
-          themeVariables: {
-            background: surface.background, primaryColor: palette[0], primaryTextColor: surface.text,
-            primaryBorderColor: palette[0], secondaryColor: palette[1], tertiaryColor: surface.panel,
-            lineColor: surface.pointer, textColor: surface.text, mainBkg: surface.panel,
-            nodeBorder: surface.border, clusterBkg: surface.panel, clusterBorder: surface.border,
-            noteBkgColor: surface.panel, noteTextColor: surface.text, noteBorderColor: surface.border,
-          },
-        })
-      } catch (e) { /* ignore */ }
+      var themeVariables = mermaidThemeVariables(mode)
+      var normalized = normalizeMermaidSource(code)
+      var repaired = repairMermaidReservedClassName(normalized)
       var id = 'dsh-mm-' + Math.random().toString(36).slice(2, 10)
       var cancelled = false
-      mermaid.render(id, code).then(function (r) {
+      enqueueMermaidRender(function () {
+        if (cancelled) return null
+        mermaid.initialize({
+          startOnLoad: false, securityLevel: 'strict', theme: 'base',
+          themeVariables: themeVariables,
+          flowchart: { htmlLabels: false },
+        })
+        return Promise.resolve(mermaid.parse(repaired.code)).then(function () {
+          return mermaid.render(id, repaired.code)
+        })
+      }).then(function (r) {
         if (cancelled) return
+        if (!r) return
         el.innerHTML = r.svg
         el.style.overflow = 'auto'
         el.style.display = 'flex'
         el.style.justifyContent = 'center'
-        if (onExport) onExport(function () {
+        var renderedSvg = el.querySelector('svg')
+        if (renderedSvg) {
+          renderedSvg.style.backgroundColor = surface.background
+          renderedSvg.style.color = surface.text
+        }
+        if (onExport) onExport(function (format) {
           var svg = el.querySelector('svg')
           if (!svg) throw new Error('diagram is not ready')
-          var rect = svg.getBoundingClientRect()
-          var width = Math.max(1, Math.round(rect.width || el.clientWidth || 800))
-          var height = Math.max(1, Math.round(rect.height || el.clientHeight || 600))
-          var source = new XMLSerializer().serializeToString(svg)
-          return new Promise(function (resolve, reject) {
-            var image = new Image()
-            var url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }))
-            image.onload = function () {
-              try {
-                var canvas = document.createElement('canvas')
-                canvas.width = width * 2
-                canvas.height = height * 2
-                var context = canvas.getContext('2d')
-                context.fillStyle = surface.background
-                context.fillRect(0, 0, canvas.width, canvas.height)
-                context.drawImage(image, 0, 0, canvas.width, canvas.height)
-                URL.revokeObjectURL(url)
-                canvas.toBlob(function (blob) {
-                  if (!blob) { reject(new Error('PNG encoding failed')); return }
-                  downloadBlob(blob, imageFilename('diagram'))
-                  resolve()
-                }, 'image/png')
-              } catch (err) { URL.revokeObjectURL(url); reject(err) }
-            }
-            image.onerror = function () { URL.revokeObjectURL(url); reject(new Error('diagram image conversion failed')) }
-            image.src = url
-          })
-        })
+          if (format === 'svg') return exportMermaidSvg(svg)
+          return exportMermaidPng(svg, surface)
+        }, ['png', 'svg'])
       }).catch(function (e) {
-        if (!cancelled) el.innerHTML = errHtml('mermaid render failed: ' + (e && e.message ? e.message : e))
+        if (!cancelled) el.innerHTML = errHtml(mermaidErrorMessage(e, repaired.code))
       })
       return function () { cancelled = true; if (onExport) onExport(null); el.innerHTML = '' }
     }
@@ -581,26 +733,61 @@ window.__ModuleLoader__.load({
         React.createElement('path', { d: 'M4 20h16' }),
       )
     }
+    function filePickerTypes(formats) {
+      return formats.map(function (format) {
+        return format === 'svg'
+          ? { description: 'SVG Vector Image (*.svg)', accept: { 'image/svg+xml': ['.svg'] } }
+          : { description: 'PNG Image (*.png)', accept: { 'image/png': ['.png'] } }
+      })
+    }
+    function selectedFileFormat(name, formats) {
+      if (/\.svg$/i.test(name) && formats.indexOf('svg') !== -1) return 'svg'
+      return formats.indexOf('png') !== -1 ? 'png' : formats[0]
+    }
     function DownloadButton(props) {
       var pendingState = React.useState(false)
       var pending = pendingState[0]
       var setPending = pendingState[1]
+      var formats = props.formats && props.formats.length ? props.formats : ['png']
       function download() {
         if (!props.onDownload || pending) return
-        try {
-          var result = props.onDownload()
-          if (result && typeof result.then === 'function') {
-            setPending(true)
-            result.catch(function () {}).then(function () { setPending(false) })
-          }
-        } catch (e) { /* a chart may still be initializing; keep the control usable */ }
+        setPending(true)
+        var target = null
+        var requested
+        if (typeof window.showSaveFilePicker === 'function') {
+          requested = window.showSaveFilePicker({
+            // Let the operating system append the selected file type. This
+            // keeps the editable default name clean and avoids a stale suffix
+            // when the user switches PNG ↔ SVG in the native dialog.
+            suggestedName: imageStem(props.title),
+            types: filePickerTypes(formats),
+          }).then(function (handle) {
+            target = handle
+            return selectedFileFormat(handle.name, formats)
+          })
+        } else {
+          requested = Promise.resolve(formats[0])
+        }
+        requested.then(function (format) {
+          return Promise.resolve(props.onDownload(format)).then(function (blob) {
+            if (!(blob instanceof Blob)) throw new Error('image export did not produce a file')
+            if (!target) {
+              downloadBlob(blob, imageFilename(props.title, format))
+              return null
+            }
+            return target.createWritable().then(function (stream) {
+              return stream.write(blob).then(function () { return stream.close() })
+            })
+          })
+        }).catch(function (error) {
+          // The user closing the native save dialog is an expected no-op.
+          if (!error || error.name !== 'AbortError') console.error('[dsh-artifact] image export failed', error)
+        }).then(function () { setPending(false) })
       }
+      var disabled = !props.ready || pending
       return React.createElement('button', {
-        type: 'button', disabled: !props.ready || pending, 'aria-label': '下载 PNG 图片', title: pending ? '正在生成图片' : '下载 PNG 图片',
-        onClick: download,
-        // Export is the terminal action, so it occupies the rightmost slot.
-        // Appearance is offset to its left by the button width plus 8px.
-        style: { position: 'absolute', top: 12, right: 12, zIndex: 2147483647, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, minHeight: 32, padding: 0, borderRadius: 7, cursor: !props.ready || pending ? 'default' : 'pointer', border: '1px solid ' + props.surface.border, background: props.surface.panel, color: props.ready ? props.surface.text : props.surface.muted, opacity: props.ready ? 1 : 0.55, boxShadow: '0 1px 3px rgba(0,0,0,0.12)' },
+        type: 'button', disabled: disabled, 'aria-label': '下载图片', title: pending ? '正在生成图片' : '下载图片（在另存为窗口选择格式）', onClick: download,
+        style: { position: 'absolute', top: 12, right: 12, zIndex: 2147483647, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, minHeight: 32, padding: 0, borderRadius: 7, cursor: disabled ? 'default' : 'pointer', border: '1px solid ' + props.surface.border, background: props.surface.panel, color: props.ready ? props.surface.text : props.surface.muted, opacity: props.ready ? 1 : 0.55, boxShadow: '0 1px 3px rgba(0,0,0,0.12)' },
       }, React.createElement(DownloadIcon, null))
     }
 
@@ -692,9 +879,13 @@ window.__ModuleLoader__.load({
       var exportState = React.useState(false)
       var exportReady = exportState[0]
       var setExportReady = exportState[1]
+      var exportFormatsState = React.useState(['png'])
+      var exportFormats = exportFormatsState[0]
+      var setExportFormats = exportFormatsState[1]
       var isGlArtifact = !!(meta && usesEchartsGl(meta.payload))
       var isPhotorealisticGlobe = !!(meta && hasGlobeScene(meta.payload))
-      var showColorThemes = !isPhotorealisticGlobe
+      var isMermaidArtifact = !!(meta && meta.engine === 'mermaid')
+      var showColorThemes = !isMermaidArtifact && !isPhotorealisticGlobe
       var availableThemes = isGlArtifact && showColorThemes ? GL_THEMES : THEMES
       var themeState = React.useState(showColorThemes && meta && typeof meta.theme === 'string' ? themeById(meta.theme, availableThemes) : THEMES[0])
       var theme = themeState[0]
@@ -706,7 +897,8 @@ window.__ModuleLoader__.load({
       // Reset display preferences when a new result arrives (they are per-card).
       React.useEffect(function () {
         var nextIsGlobe = !!(meta && hasGlobeScene(meta.payload))
-        var nextCanTheme = !nextIsGlobe
+        var nextIsMermaid = !!(meta && meta.engine === 'mermaid')
+        var nextCanTheme = !nextIsMermaid && !nextIsGlobe
         var nextThemes = meta && usesEchartsGl(meta.payload) && nextCanTheme ? GL_THEMES : THEMES
         setTheme(nextCanTheme && meta && typeof meta.theme === 'string' ? themeById(meta.theme, nextThemes) : THEMES[0])
         setMode(meta && typeof meta.mode === 'string' ? modeById(meta.mode) : MODES[0])
@@ -718,9 +910,10 @@ window.__ModuleLoader__.load({
         var engine = meta.engine === 'mermaid' ? 'mermaid' : 'echarts'
         var cancelled = false
         var dispose = noop
-        function setExporter(exporter) {
+        function setExporter(exporter, formats) {
           exportRef.current = exporter
           setExportReady(typeof exporter === 'function')
+          setExportFormats(typeof exporter === 'function' && Array.isArray(formats) && formats.length ? formats : ['png'])
         }
         setExporter(null)
         var promise
@@ -760,7 +953,7 @@ window.__ModuleLoader__.load({
           'div',
           { style: { position: 'relative', isolation: 'isolate', width: '100%', height: height + 'px', minHeight: '200px', borderRadius: 8, overflow: 'hidden', background: surface.background, border: '1px solid ' + surface.border } },
           React.createElement('div', { ref: containerRef, style: { position: 'absolute', inset: 0, zIndex: 0, width: '100%', height: '100%' } }),
-          React.createElement(DownloadButton, { surface: surface, ready: exportReady, onDownload: function () { return exportRef.current && exportRef.current() } }),
+          React.createElement(DownloadButton, { surface: surface, ready: exportReady, formats: exportFormats, title: meta.title || 'diagram', onDownload: function (format) { return exportRef.current && exportRef.current(format) } }),
           React.createElement(AppearanceMenu, { theme: theme, mode: mode, themes: availableThemes, showThemes: showColorThemes, themeLabel: isGlArtifact ? '3D 单色主题' : '配色主题', modes: MODES, surface: surface, palette: palette, onTheme: function (id) { setTheme(themeById(id, availableThemes)) }, onMode: function (id) { setMode(modeById(id)) } }),
         ),
       )
