@@ -1,7 +1,7 @@
 {
   "name": "dsh-artifact",
   "version": "0.2.0",
-  "description": "Render ECharts (including official ECharts-GL 3D charts), Mermaid, and sandboxed custom HTML inline in DeepSeek Harness conversations — declarative payloads fed to the real engines.",
+  "description": "Native ECharts and Mermaid visualization canvas for DeepSeek Harness conversations, with declarative pure-JSON payloads and a sandboxed HTML escape hatch.",
   "license": "MIT",
   "type": "module",
   "main": "./index.js",
