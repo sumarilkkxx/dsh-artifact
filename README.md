@@ -97,6 +97,14 @@ environment, material, camera, light, color, or atmosphere configuration is
 preserved.
 This is for data visualization, not arbitrary 3D-model or game-scene construction.
 
+### Download images
+
+Every `render_artifact` ECharts/ECharts-GL or Mermaid card has an in-canvas
+download button after it finishes rendering. It exports the current result as a
+2× PNG with the selected light/dark background; the floating appearance controls
+are intentionally excluded. `render_html` remains sandboxed and does not expose
+an export button because its opaque iframe cannot be read safely by the host.
+
 ### `render_html` (sandboxed custom widget)
 
 | Parameter | Type | Description |

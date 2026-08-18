@@ -431,13 +431,40 @@ window.__ModuleLoader__.load({
 
     // ---------- engine renderers (each returns a disposer) ----------
 
-    function renderEcharts(el, echarts, option, theme, mode, maps) {
+    function imageFilename(title) {
+      var safe = typeof title === 'string' ? title.trim().replace(/[\\/:*?"<>|\x00-\x1f]+/g, '-').replace(/\s+/g, '-') : ''
+      return (safe || 'dsh-artifact') + '.png'
+    }
+    function downloadBlob(blob, filename) {
+      var url = URL.createObjectURL(blob)
+      var link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.setTimeout(function () { URL.revokeObjectURL(url) }, 1000)
+    }
+    function downloadDataUrl(dataUrl, filename) {
+      var link = document.createElement('a')
+      link.href = dataUrl
+      link.download = filename
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+    function renderEcharts(el, echarts, option, theme, mode, maps, onExport) {
       if (!option || typeof option !== 'object') { el.innerHTML = errHtml('invalid echarts option'); return noop }
       var chart = null
       try {
         registerMaps(echarts, maps)
         chart = echarts.init(el, registerEchartsTheme(echarts, theme, mode))
         chart.setOption(compileGlOption(option, theme, mode))
+        if (onExport) onExport(function () {
+          downloadDataUrl(chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: surfaceFor(mode).background }), imageFilename(option.title && !Array.isArray(option.title) ? option.title.text : undefined))
+        })
       } catch (e) {
         if (chart) chart.dispose()
         el.innerHTML = errHtml('ECharts render failed: ' + (e && e.message ? e.message : e) + '. Check the ECharts option, required coordinate system/component, and map registration.')
@@ -445,10 +472,10 @@ window.__ModuleLoader__.load({
       }
       var ro = new ResizeObserver(function () { chart.resize() })
       ro.observe(el)
-      return function () { ro.disconnect(); chart.dispose() }
+      return function () { if (onExport) onExport(null); ro.disconnect(); chart.dispose() }
     }
 
-    function renderMermaid(el, mermaid, code, theme, mode) {
+    function renderMermaid(el, mermaid, code, theme, mode, onExport) {
       if (typeof code !== 'string' || code.trim() === '') { el.innerHTML = errHtml('empty mermaid code'); return noop }
       var surface = surfaceFor(mode)
       var palette = paletteFor(theme, mode) || (resolvedMode(mode) === 'dark'
@@ -474,10 +501,41 @@ window.__ModuleLoader__.load({
         el.style.overflow = 'auto'
         el.style.display = 'flex'
         el.style.justifyContent = 'center'
+        if (onExport) onExport(function () {
+          var svg = el.querySelector('svg')
+          if (!svg) throw new Error('diagram is not ready')
+          var rect = svg.getBoundingClientRect()
+          var width = Math.max(1, Math.round(rect.width || el.clientWidth || 800))
+          var height = Math.max(1, Math.round(rect.height || el.clientHeight || 600))
+          var source = new XMLSerializer().serializeToString(svg)
+          return new Promise(function (resolve, reject) {
+            var image = new Image()
+            var url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }))
+            image.onload = function () {
+              try {
+                var canvas = document.createElement('canvas')
+                canvas.width = width * 2
+                canvas.height = height * 2
+                var context = canvas.getContext('2d')
+                context.fillStyle = surface.background
+                context.fillRect(0, 0, canvas.width, canvas.height)
+                context.drawImage(image, 0, 0, canvas.width, canvas.height)
+                URL.revokeObjectURL(url)
+                canvas.toBlob(function (blob) {
+                  if (!blob) { reject(new Error('PNG encoding failed')); return }
+                  downloadBlob(blob, imageFilename('diagram'))
+                  resolve()
+                }, 'image/png')
+              } catch (err) { URL.revokeObjectURL(url); reject(err) }
+            }
+            image.onerror = function () { URL.revokeObjectURL(url); reject(new Error('diagram image conversion failed')) }
+            image.src = url
+          })
+        })
       }).catch(function (e) {
         if (!cancelled) el.innerHTML = errHtml('mermaid render failed: ' + (e && e.message ? e.message : e))
       })
-      return function () { cancelled = true; el.innerHTML = '' }
+      return function () { cancelled = true; if (onExport) onExport(null); el.innerHTML = '' }
     }
 
     // ---------- render_html sandbox ----------
@@ -516,6 +574,35 @@ window.__ModuleLoader__.load({
     function SurfaceSwatch(props) {
       return React.createElement('span', { 'aria-hidden': true, style: { width: 13, height: 13, borderRadius: 99, flexShrink: 0, border: '1px solid ' + props.surface.border, background: props.surface.background } })
     }
+    function DownloadIcon() {
+      return React.createElement('svg', { 'aria-hidden': true, viewBox: '0 0 24 24', width: 15, height: 15, fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round' },
+        React.createElement('path', { d: 'M12 3v11' }),
+        React.createElement('path', { d: 'm8 10 4 4 4-4' }),
+        React.createElement('path', { d: 'M4 20h16' }),
+      )
+    }
+    function DownloadButton(props) {
+      var pendingState = React.useState(false)
+      var pending = pendingState[0]
+      var setPending = pendingState[1]
+      function download() {
+        if (!props.onDownload || pending) return
+        try {
+          var result = props.onDownload()
+          if (result && typeof result.then === 'function') {
+            setPending(true)
+            result.catch(function () {}).then(function () { setPending(false) })
+          }
+        } catch (e) { /* a chart may still be initializing; keep the control usable */ }
+      }
+      return React.createElement('button', {
+        type: 'button', disabled: !props.ready || pending, 'aria-label': '下载 PNG 图片', title: pending ? '正在生成图片' : '下载 PNG 图片',
+        onClick: download,
+        // Export is the terminal action, so it occupies the rightmost slot.
+        // Appearance is offset to its left by the button width plus 8px.
+        style: { position: 'absolute', top: 12, right: 12, zIndex: 2147483647, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, minHeight: 32, padding: 0, borderRadius: 7, cursor: !props.ready || pending ? 'default' : 'pointer', border: '1px solid ' + props.surface.border, background: props.surface.panel, color: props.ready ? props.surface.text : props.surface.muted, opacity: props.ready ? 1 : 0.55, boxShadow: '0 1px 3px rgba(0,0,0,0.12)' },
+      }, React.createElement(DownloadIcon, null))
+    }
 
     // A compact, in-canvas menu keeps the chart card quiet until the user
     // needs styling controls. It is intentionally independent of the renderer
@@ -552,7 +639,7 @@ window.__ModuleLoader__.load({
           onKeyDown: function (e) { if (e && e.key === 'Escape') { setOpen(false); if (e.stopPropagation) e.stopPropagation() } },
           // ECharts-GL can create multiple canvas layers. This overlay is a
           // sibling of the renderer and must always win the stacking contest.
-          style: { position: 'absolute', top: 12, right: 12, zIndex: 2147483647, isolation: 'isolate', transform: 'translateZ(0)', pointerEvents: 'auto', fontFamily: 'inherit' },
+          style: { position: 'absolute', top: 12, right: 52, zIndex: 2147483647, isolation: 'isolate', transform: 'translateZ(0)', pointerEvents: 'auto', fontFamily: 'inherit' },
         },
         React.createElement(
           'button',
@@ -601,6 +688,10 @@ window.__ModuleLoader__.load({
       var block = props.block
       var meta = block && 'meta' in block ? block.meta : undefined
       var containerRef = React.useRef(null)
+      var exportRef = React.useRef(null)
+      var exportState = React.useState(false)
+      var exportReady = exportState[0]
+      var setExportReady = exportState[1]
       var isGlArtifact = !!(meta && usesEchartsGl(meta.payload))
       var isPhotorealisticGlobe = !!(meta && hasGlobeScene(meta.payload))
       var showColorThemes = !isPhotorealisticGlobe
@@ -627,20 +718,25 @@ window.__ModuleLoader__.load({
         var engine = meta.engine === 'mermaid' ? 'mermaid' : 'echarts'
         var cancelled = false
         var dispose = noop
+        function setExporter(exporter) {
+          exportRef.current = exporter
+          setExportReady(typeof exporter === 'function')
+        }
+        setExporter(null)
         var promise
         if (engine === 'mermaid') promise = loadAsset('mermaid.min.js', 'mermaid')
         else promise = loadAsset('echarts.min.js', 'echarts')
 
         promise.then(function (api) {
           if (cancelled || !el) return
-          if (engine === 'mermaid') dispose = renderMermaid(el, api, meta.payload, theme, mode)
+          if (engine === 'mermaid') dispose = renderMermaid(el, api, meta.payload, theme, mode, setExporter)
           else if (usesEchartsGl(meta.payload)) {
             loadEchartsGl().then(function () {
-              if (!cancelled) dispose = renderEcharts(el, api, meta.payload, theme, mode, meta.maps)
+              if (!cancelled) dispose = renderEcharts(el, api, meta.payload, theme, mode, meta.maps, setExporter)
             }).catch(function (err) {
               if (!cancelled) el.innerHTML = errHtml('ECharts-GL load failed: ' + (err && err.message ? err.message : err))
             })
-          } else dispose = renderEcharts(el, api, meta.payload, theme, mode, meta.maps)
+          } else dispose = renderEcharts(el, api, meta.payload, theme, mode, meta.maps, setExporter)
         }).catch(function (err) {
           if (!cancelled) el.innerHTML = errHtml('engine load failed: ' + (err && err.message ? err.message : err))
         })
@@ -648,6 +744,7 @@ window.__ModuleLoader__.load({
         return function () {
           cancelled = true
           dispose()
+          setExporter(null)
         }
       }, [meta, theme, mode, block && block.callId])
 
@@ -663,6 +760,7 @@ window.__ModuleLoader__.load({
           'div',
           { style: { position: 'relative', isolation: 'isolate', width: '100%', height: height + 'px', minHeight: '200px', borderRadius: 8, overflow: 'hidden', background: surface.background, border: '1px solid ' + surface.border } },
           React.createElement('div', { ref: containerRef, style: { position: 'absolute', inset: 0, zIndex: 0, width: '100%', height: '100%' } }),
+          React.createElement(DownloadButton, { surface: surface, ready: exportReady, onDownload: function () { return exportRef.current && exportRef.current() } }),
           React.createElement(AppearanceMenu, { theme: theme, mode: mode, themes: availableThemes, showThemes: showColorThemes, themeLabel: isGlArtifact ? '3D 单色主题' : '配色主题', modes: MODES, surface: surface, palette: palette, onTheme: function (id) { setTheme(themeById(id, availableThemes)) }, onMode: function (id) { setMode(modeById(id)) } }),
         ),
       )
