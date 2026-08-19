@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>dsh-artifact · From Prompt to Canvas</title>
+  <style>
+    :root {
+      --fit: 1;
+      --px: 0px;
+      --py: 0px;
+      --enter-y: 0px;
+      --window-scale: 1;
+      --window-opacity: 1;
+      --stream-opacity: 1;
+      --stream-y: 0px;
+      --scroll-thumb-y: 0px;
+      --ease-out: cubic-bezier(.16, 1, .3, 1);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #05070a;
+    }
+
+    body {
+      color: #fff;
+      font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    }
+
+    .viewport {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      isolation: isolate;
+      background:
+        radial-gradient(58% 76% at 50% 56%, rgba(28, 43, 69, .55), transparent 74%),
+        radial-gradient(44% 48% at 10% 100%, rgba(27, 74, 160, .19), transparent 72%),
+        #05070a;
+    }
+
+    .viewport::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -3;
+      opacity: .25;
+      background-image:
+        linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: radial-gradient(ellipse at center, #000 24%, transparent 80%);
+    }
+
+    .canvas {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 1920px;
+      height: 1080px;
+      transform: translate(-50%, -50%) scale(var(--fit));
+      transform-origin: center;
+    }
+
+    .ambient {
+      position: absolute;
+      left: 250px;
+      bottom: 14px;
+      width: 1420px;
+      height: 88px;
+      border-radius: 50%;
+      background: rgba(48, 104, 213, .22);
+      filter: blur(54px);
+      opacity: .72;
+      animation: ambient-breathe 11s ease-in-out infinite;
+    }
+
+    .native-window {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .window {
+      position: absolute;
+      left: 210px;
+      top: 60px;
+      width: 1500px;
+      height: 958.5px;
+      overflow: hidden;
+      border-radius: 17px;
+      background: rgb(21, 21, 24);
+      border: 0;
+      box-shadow:
+        0 50px 120px rgba(0,0,0,.72),
+        0 0 0 1px rgba(214, 225, 244, .2) inset;
+      opacity: var(--window-opacity);
+      transform:
+        translate3d(var(--px), calc(var(--py) + var(--enter-y)), 0)
+        scale(var(--window-scale));
+      transform-origin: 50% 56%;
+      will-change: transform, opacity;
+    }
+
+    /* Export captures the application surface alone. A square frame prevents
+       the page backdrop from appearing as dark corner pixels in the WebP. */
+    .export-frame .window {
+      border-radius: 0;
+    }
+
+    .native-window {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+
+    /* Only the conversation surface is replaced during streaming.
+       Header, sidebar, scrollbar, composer and status bar remain original pixels. */
+    .stream-mask {
+      position: absolute;
+      z-index: 2;
+      left: 3.8523%;
+      right: .5163%;
+      top: 7.8310%;
+      height: 78.6203%;
+      overflow: hidden;
+      background: rgb(21, 21, 24);
+      opacity: var(--stream-opacity);
+      will-change: opacity;
+    }
+
+    .stream-scale {
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 2408px;
+      height: 1265px;
+      transform: scale(.595711);
+      transform-origin: left top;
+    }
+
+    .stream-track {
+      position: absolute;
+      inset: 0;
+      width: 2408px;
+      height: 1265px;
+      transform: translate3d(0, var(--stream-y), 0);
+      will-change: transform;
+    }
+
+    /* The reference screenshot includes its final-position scrollbar. Mask that
+       frozen pixel strip, then draw one truthful thumb driven by stream progress. */
+    .stream-scrollbar-mask {
+      position: absolute;
+      z-index: 3;
+      top: 75px;
+      right: 0;
+      width: 12px;
+      height: 754px;
+      background: rgb(21, 21, 24);
+      pointer-events: none;
+    }
+
+    .stream-scroll-thumb {
+      position: absolute;
+      z-index: 4;
+      top: 126px;
+      right: 4px;
+      width: 7px;
+      height: 340px;
+      border-radius: 999px;
+      background: rgba(151, 154, 164, .52);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, .035) inset;
+      transform: translate3d(0, var(--scroll-thumb-y), 0);
+      will-change: transform;
+      pointer-events: none;
+    }
+
+    .sprite {
+      position: absolute;
+      overflow: hidden;
+      width: 0;
+      will-change: width;
+    }
+
+    .sprite img {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: block;
+      max-width: none;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .stream-caret {
+      position: absolute;
+      z-index: 4;
+      width: 3px;
+      border-radius: 2px;
+      background: rgba(151, 168, 198, .92);
+      box-shadow: 0 0 8px rgba(110, 143, 201, .32);
+      opacity: 0;
+      pointer-events: none;
+      will-change: transform, height, opacity;
+    }
+
+    .composer-caret {
+      position: absolute;
+      z-index: 5;
+      left: 25.734710%;
+      top: 88.502175%;
+      width: 1px;
+      height: 1.740211%;
+      background: rgb(103, 158, 254);
+      opacity: 1;
+      pointer-events: none;
+      animation: composer-caret-blink 1.06s steps(1, end) infinite;
+    }
+
+    @keyframes ambient-breathe {
+      0%, 100% { opacity: .42; transform: scaleX(.89); }
+      46%, 82% { opacity: .78; transform: scaleX(1); }
+    }
+
+    @keyframes composer-caret-blink {
+      0%, 47% { opacity: 1; }
+      47.01%, 100% { opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ambient { animation: none !important; }
+      .window {
+        opacity: 1 !important;
+        transform: none !important;
+      }
+      .composer-caret { animation: none !important; opacity: 1 !important; }
+      .stream-mask { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="viewport" aria-label="DeepSeek Harness 流式生成 GitHub 日历热力图动效">
+    <div class="canvas">
+      <div class="ambient" aria-hidden="true"></div>
+      <section class="window" role="img" aria-label="DeepSeek Harness 原生界面生成 GitHub 日历热力图">
+        <img class="native-window" src="dsh-reference-window-caretless.png" alt="" />
+
+        <div class="stream-mask" aria-hidden="true">
+          <div class="stream-scale">
+            <div class="stream-track">
+              <div class="sprite" data-x="1323" data-y="19" data-w="560" data-h="105" data-start="0.85" data-end="1.35">
+                <img src="assets/01-user-request.png" width="560" height="105" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="194" data-w="1120" data-h="55" data-start="1.40" data-end="1.82">
+                <img src="assets/02-context.png" width="1120" height="55" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="264" data-w="690" data-h="60" data-start="1.84" data-end="2.15">
+                <img src="assets/02b-context-catalog.png" width="690" height="60" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="334" data-w="1470" data-h="65" data-start="2.17" data-end="2.72">
+                <img src="assets/02c-think-setup.png" width="1470" height="65" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="404" data-w="700" data-h="55" data-start="2.74" data-end="3.05">
+                <img src="assets/03-skill.png" width="700" height="55" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="474" data-w="1450" data-h="65" data-start="3.07" data-end="3.58">
+                <img src="assets/04-think-build.png" width="1450" height="65" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="549" data-w="1380" data-h="50" data-start="3.60" data-end="4.18">
+                <img src="assets/05a-answer-line1.png" width="1380" height="50" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="599" data-w="190" data-h="50" data-start="4.19" data-end="4.34">
+                <img src="assets/05b-answer-line2.png" width="190" height="50" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="671" data-w="950" data-h="60" data-start="4.36" data-end="4.70">
+                <img src="assets/06-pwsh.png" width="950" height="60" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="739" data-w="1470" data-h="65" data-start="4.72" data-end="5.18">
+                <img src="assets/06b-think-date.png" width="1470" height="65" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="812" data-w="720" data-h="60" data-start="5.20" data-end="5.50">
+                <img src="assets/07-read.png" width="720" height="60" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="879" data-w="1470" data-h="70" data-start="5.52" data-end="5.98">
+                <img src="assets/07b-think-truncation.png" width="1470" height="70" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="949" data-w="1120" data-h="65" data-start="6.00" data-end="6.30">
+                <img src="assets/07c-pwsh-compact.png" width="1120" height="65" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="1019" data-w="770" data-h="65" data-start="6.32" data-end="6.60">
+                <img src="assets/07d-read-compact.png" width="770" height="65" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="1089" data-w="1450" data-h="65" data-start="6.62" data-end="7.05">
+                <img src="assets/08-think-config.png" width="1450" height="65" alt="" />
+              </div>
+              <div class="sprite" data-x="533" data-y="1166" data-w="1500" data-h="70" data-start="7.07" data-end="7.55">
+                <img src="assets/09-ready.png" width="1500" height="70" alt="" />
+              </div>
+              <div class="stream-caret"></div>
+            </div>
+          </div>
+        </div>
+        <div class="stream-scrollbar-mask" aria-hidden="true"></div>
+        <div class="stream-scroll-thumb" aria-hidden="true"></div>
+
+        <div class="composer-caret" aria-hidden="true"></div>
+
+      </section>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const CYCLE = 8.5;
+      const windowEl = document.querySelector('.window');
+      const streamMask = document.querySelector('.stream-mask');
+      const streamTrack = document.querySelector('.stream-track');
+      const caret = document.querySelector('.stream-caret');
+
+      // Actual visible-pixel bounds for every native text crop.
+      // The first item is the user bubble, which intentionally has no AI caret.
+      const inkBounds = [
+        null,
+        { left: 22, top: 14, right: 588, bottom: 40 },
+        { left: 22, top: 14, right: 338, bottom: 40 },
+        { left: 21, top: 14, right: 1113, bottom: 40 },
+        { left: 22, top: 14, right: 254, bottom: 36 },
+        { left: 21, top: 14, right: 1320, bottom: 40 },
+        { left: 18, top: 11, right: 1304, bottom: 40 },
+        { left: 19, top: 10, right: 55, bottom: 37 },
+        { left: 21, top: 14, right: 600, bottom: 39 },
+        { left: 21, top: 15, right: 1324, bottom: 41 },
+        { left: 22, top: 12, right: 422, bottom: 39 },
+        { left: 21, top: 15, right: 1319, bottom: 41 },
+        { left: 21, top: 16, right: 572, bottom: 41 },
+        { left: 22, top: 15, right: 422, bottom: 42 },
+        { left: 21, top: 15, right: 1315, bottom: 41 },
+        { left: 18, top: 10, right: 837, bottom: 38 }
+      ];
+
+      const sprites = [...document.querySelectorAll('.sprite')].map((el, index) => {
+        const item = {
+          el,
+          x: Number(el.dataset.x),
+          y: Number(el.dataset.y),
+          w: Number(el.dataset.w),
+          h: Number(el.dataset.h),
+          start: Number(el.dataset.start),
+          end: Number(el.dataset.end),
+          ink: inkBounds[index]
+        };
+        item.revealWidth = item.ink ? item.ink.right + 4 : item.w;
+        el.style.left = `${item.x}px`;
+        el.style.top = `${item.y}px`;
+        el.style.height = `${item.h}px`;
+        return item;
+      });
+
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const clamp01 = (v) => Math.max(0, Math.min(1, v));
+      const smooth = (v) => {
+        const x = clamp01(v);
+        return x * x * (3 - 2 * x);
+      };
+      const easeOut = (v) => 1 - Math.pow(1 - clamp01(v), 4);
+
+      function resize() {
+        const fit = Math.min(innerWidth / 1920, innerHeight / 1080);
+        document.documentElement.style.setProperty('--fit', fit.toFixed(5));
+      }
+
+      let pointerX = 0;
+      let pointerY = 0;
+      let targetX = 0;
+      let targetY = 0;
+      addEventListener('pointermove', (event) => {
+        targetX = ((event.clientX / innerWidth) - .5) * 5;
+        targetY = ((event.clientY / innerHeight) - .5) * 3;
+      }, { passive: true });
+
+      function render(timeMs, scheduleNext = true) {
+        const t = (timeMs / 1000) % CYCLE;
+
+        pointerX += (targetX - pointerX) * .045;
+        pointerY += (targetY - pointerY) * .045;
+        document.documentElement.style.setProperty('--px', `${pointerX.toFixed(2)}px`);
+        document.documentElement.style.setProperty('--py', `${pointerY.toFixed(2)}px`);
+
+        document.documentElement.style.setProperty('--window-opacity', '1');
+        document.documentElement.style.setProperty('--enter-y', '0px');
+        document.documentElement.style.setProperty('--window-scale', '1');
+
+        const scrollProgress = smooth((t - 1.40) / 6.15);
+        const scrollY = -701 * scrollProgress;
+        document.documentElement.style.setProperty('--stream-y', `${scrollY.toFixed(2)}px`);
+        document.documentElement.style.setProperty('--scroll-thumb-y', `${(112 * scrollProgress).toFixed(2)}px`);
+
+        let active = null;
+        for (const sprite of sprites) {
+          const raw = (t - sprite.start) / (sprite.end - sprite.start);
+          const p = clamp01(raw);
+          const reveal = sprite.revealWidth * easeOut(p);
+          sprite.el.style.width = `${reveal.toFixed(2)}px`;
+          if (sprite.ink && raw >= 0 && raw < 1 && reveal >= sprite.ink.left) {
+            active = { sprite, reveal };
+          }
+        }
+
+        if (active) {
+          const { sprite, reveal } = active;
+          const x = sprite.x + Math.min(reveal + 3, sprite.ink.right + 5);
+          const y = sprite.y + sprite.ink.top - 2;
+          const height = sprite.ink.bottom - sprite.ink.top + 5;
+          const pulse = .76 + .18 * (1 + Math.sin(timeMs * .015)) / 2;
+          caret.style.height = `${height}px`;
+          caret.style.opacity = pulse.toFixed(3);
+          caret.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0)`;
+        } else {
+          caret.style.opacity = '0';
+        }
+
+        const streamFade = smooth((t - 7.58) / .80);
+        streamMask.style.opacity = String(1 - streamFade);
+
+        if (scheduleNext) requestAnimationFrame(render);
+      }
+
+      resize();
+      addEventListener('resize', resize, { passive: true });
+
+      window.__renderAt = (seconds) => render(seconds * 1000, false);
+      const exportMode = new URLSearchParams(location.search).has('export');
+
+      if (exportMode) {
+        document.documentElement.classList.add('export-frame');
+      }
+
+      if (reduced) {
+        windowEl.style.opacity = '1';
+        streamMask.style.display = 'none';
+      } else if (exportMode) {
+        render(0, false);
+      } else {
+        requestAnimationFrame(render);
+      }
+    })();
+  </script>
+</body>
+</html>
