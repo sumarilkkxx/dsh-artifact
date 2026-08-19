@@ -29,6 +29,22 @@ Your request  →  model understands the intent  →  ECharts option / Mermaid c
 
 ## Highlights
 
+### From a request to a native canvas
+
+Describe the visualization you need in ordinary language. `dsh-artifact` keeps the complete workflow inside the conversation: the model reasons about the request, prepares a native engine payload, and renders the result as an interactive canvas with appearance controls and PNG export.
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/sumarilkkxx/dsh-artifact/master/assets/dsh-artifact-workflow.webp" target="_blank" rel="noopener noreferrer" title="Open the full-size animation">
+    <img src="assets/dsh-artifact-workflow.webp" alt="A natural-language request becoming a native GitHub-style calendar heatmap inside DeepSeek Harness" width="100%" />
+  </a>
+</p>
+
+<p align="center"><sub>One request, from streamed reasoning and tool execution to a native ECharts calendar heatmap. The demonstration preserves the actual DeepSeek Harness interface.</sub></p>
+
+
+
+### Built around real rendering engines
+
 | | Capability |
 |---|---|
 | **Native engines** | ECharts 6, the official ECharts-GL extension when an option needs it, and Mermaid 11 |
@@ -36,7 +52,7 @@ Your request  →  model understands the intent  →  ECharts option / Mermaid c
 | **Diagram-first Mermaid** | Flowcharts, sequence, class, state, ER, gantt, journey, pie, and other Mermaid-supported diagrams |
 | **Interactive canvas** | Tooltips, legends, zoom, pan, 3D controls, and responsive resizing come from the actual renderer |
 | **Appearance controls** | In-canvas ECharts-inspired palettes and light/dark backgrounds; photographic globes retain their real-world surface and expose background mode only |
-| **PNG export** | Download ECharts, ECharts-GL, and Mermaid results as 2× PNG images using the active canvas background |
+| **Image download** | Download ECharts, ECharts-GL, and Mermaid canvases as 2× PNG images using the active background; standard ECharts and Mermaid diagrams also support SVG download |
 | **Safe by design** | Pure JSON across the declarative boundary; isolated custom HTML runs in a CSP-restricted sandbox iframe |
 
 ## Install
@@ -130,7 +146,8 @@ dsh plugin --profile web add .
 |---|---|
 | `index.js` | Host tool definitions, validation, prompt guidance, and local asset route |
 | `client.js` | DeepSeek Harness toolviews, renderer dispatch, appearance controls, and PNG export |
-| `assets/` | Committed ECharts, ECharts-GL, Mermaid, and project SVG assets |
+| `assets/` | Committed ECharts, ECharts-GL, Mermaid, and project media assets |
+| `docs/showcase/` | Source and pixel assets for the README motion study |
 | `scripts/build.mjs` | Copies renderer distributions into `assets/` |
 
 The plugin has no `@deepseek-ai/*` runtime imports. ECharts, ECharts-GL, and Mermaid are build-time dependencies used to create the committed local assets.

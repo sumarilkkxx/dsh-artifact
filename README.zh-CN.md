@@ -18,7 +18,6 @@
   <img src="assets/dsh-artifact-banner.png" alt="dsh-artifact — DeepSeek Harness 原生 ECharts 与 Mermaid 可视化画布" width="100%" />
 </p>
 
-
 ## 项目定位
 
 `dsh-artifact` 是 DeepSeek Harness 的可视化渲染器。用户只需用自然语言描述想要的图表或图，模型理解意图、选择合适的原生引擎并生成声明式 payload，结果会直接以交互式画布出现在对话中。
@@ -31,6 +30,21 @@
 
 ## 核心能力
 
+### 从一句指令到原生画布
+
+只需用自然语言描述想要的可视化，`dsh-artifact` 就能在同一段对话中完成整个过程：模型理解需求、生成原生引擎 payload，并将结果渲染为支持外观切换和 PNG 下载的交互式画布。
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/sumarilkkxx/dsh-artifact/master/assets/dsh-artifact-workflow.webp" target="_blank" rel="noopener noreferrer" title="在新标签页中打开完整动图">
+    <img src="assets/dsh-artifact-workflow.webp" alt="自然语言指令在 DeepSeek Harness 中生成原生 GitHub 风格日历热力图" width="100%" />
+  </a>
+</p>
+
+<p align="center"><sub>一次请求，从流式思考和工具调用，到原生 ECharts 日历热力图。演示完整保留 DeepSeek Harness 的真实界面。</sub></p>
+
+
+### 基于真实渲染引擎
+
 | | 能力 |
 |---|---|
 | **原生渲染引擎** | ECharts 6、仅在 option 需要时按需启用的官方 ECharts-GL 扩展，以及 Mermaid 11 |
@@ -38,7 +52,7 @@
 | **Mermaid 图表与图** | 流程图、时序图、类图、状态图、ER 图、甘特图、旅程图、饼图及 Mermaid 支持的其他图形 |
 | **交互式画布** | tooltip、图例、缩放、拖拽、3D 控制和响应式尺寸均由实际渲染引擎提供 |
 | **外观控制** | 画布内可切换 ECharts 风格主题和深/浅背景；真实贴图地球只提供背景切换，不篡改地理表面颜色 |
-| **PNG 下载** | ECharts、ECharts-GL 和 Mermaid 画布可按当前背景导出 2× PNG |
+| **PNG 下载** | ECharts、ECharts-GL 和 Mermaid 画布均可按当前背景导出 2× PNG；标准 ECharts 图表和 Mermaid 图还支持 SVG 下载 |
 | **安全边界** | 声明式通道全程纯 JSON；自定义 HTML 运行在 CSP 限制的沙箱 iframe 中 |
 
 ## 安装
@@ -132,7 +146,8 @@ dsh plugin --profile web add .
 |---|---|
 | `index.js` | 宿主工具定义、校验、提示词引导和本地资产路由 |
 | `client.js` | DeepSeek Harness toolview、引擎分发、外观控制和 PNG 导出 |
-| `assets/` | 已提交的 ECharts、ECharts-GL、Mermaid 与项目 SVG 资产 |
+| `assets/` | 已提交的 ECharts、ECharts-GL、Mermaid 与项目媒体资产 |
+| `docs/showcase/` | README 展示动效的源码与像素素材 |
 | `scripts/build.mjs` | 将渲染器发行文件复制到 `assets/` |
 
 插件不引入 `@deepseek-ai/*` 运行时依赖。ECharts、ECharts-GL 和 Mermaid 都是构建期依赖，只用于产出随仓库提交的本地资产。
