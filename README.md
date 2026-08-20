@@ -57,6 +57,14 @@ Describe the visualization you need in ordinary language. `dsh-artifact` keeps t
 
 ## Install
 
+Install the DeepSeek Harness CLI first (one time):
+
+```sh
+npm install -g @deepseek-ai/dsh
+```
+
+If this is your first time using DSH, run `dsh web` once to initialize the web profile, then stop it before adding the plugin.
+
 ```sh
 # GitHub install (recommended; prebuilt engine assets are included)
 dsh plugin --profile web add github:sumarilkkxx/dsh-artifact
@@ -65,7 +73,7 @@ dsh plugin --profile web add github:sumarilkkxx/dsh-artifact
 dsh plugin --profile web add link:/path/to/dsh-artifact
 ```
 
-Restart `dsh web`, then hard-refresh the browser (`Cmd/Ctrl+Shift+R`). `pnpm` must be available on `PATH` because the DSH plugin command uses it internally.
+Start or restart `dsh web`, then hard-refresh the browser (`Cmd/Ctrl+Shift+R`). `pnpm` must be available on `PATH` because the DSH plugin command uses it internally.
 
 ## Use it naturally
 
