@@ -57,6 +57,14 @@
 
 ## 安装
 
+请先安装 DeepSeek Harness CLI（仅需一次）：
+
+```sh
+npm install -g @deepseek-ai/dsh
+```
+
+如果你第一次使用 DSH，请先运行一次 `dsh web` 初始化 Web profile，然后停止该进程，再继续安装插件。
+
 ```sh
 # 从 GitHub 安装（推荐；仓库已包含构建好的引擎资产）
 dsh plugin --profile web add github:sumarilkkxx/dsh-artifact
@@ -65,7 +73,7 @@ dsh plugin --profile web add github:sumarilkkxx/dsh-artifact
 dsh plugin --profile web add link:/path/to/dsh-artifact
 ```
 
-重启 `dsh web` 后，在浏览器强制刷新（`Cmd/Ctrl+Shift+R`）。系统需要将 `pnpm` 加入 `PATH`，因为 DSH 的插件命令会在内部使用它。
+启动或重启 `dsh web` 后，在浏览器强制刷新（`Cmd/Ctrl+Shift+R`）。系统需要将 `pnpm` 加入 `PATH`，因为 DSH 的插件命令会在内部使用它。
 
 ## 直接用自然语言绘图
 
